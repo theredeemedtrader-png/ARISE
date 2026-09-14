@@ -16,7 +16,7 @@ import {
 } from '@arise/charting';
 import { Icon } from './icons';
 
-type DrawingTool = 'SELECT' | 'LINE' | 'RAY' | 'RECTANGLE' | 'TRENDLINE' | 'POINT' | 'TEXT';
+type DrawingTool = 'SELECT' | 'HORIZONTAL' | 'LINE' | 'RAY' | 'RECTANGLE' | 'TRENDLINE' | 'POINT' | 'TEXT';
 type Theme = 'dark' | 'light';
 type InspectorTab = 'OBJECTS' | 'LAYERS' | 'EXECUTION';
 
@@ -27,6 +27,7 @@ interface Props {
 
 const TOOL_ICON: Record<DrawingTool, Parameters<typeof Icon>[0]['name']> = {
   SELECT: 'cursor',
+  HORIZONTAL: 'minus',
   LINE: 'minus',
   RAY: 'arrow',
   RECTANGLE: 'rectangle',
@@ -104,6 +105,7 @@ function shiftGeometry(geometry: DrawingGeometry, priceDelta: number): DrawingGe
 function geometryForTool(tool: Exclude<DrawingTool, 'SELECT'>, start: ChartPoint, end: ChartPoint, semanticType: string): DrawingGeometry {
   if (tool === 'POINT') return { kind: 'POINT', point: end };
   if (tool === 'TEXT') return { kind: 'TEXT', point: end, text: semanticType.replaceAll('_', ' ') };
+  if (tool === 'HORIZONTAL') return { kind: 'LINE', start, end: { ...end, price: start.price } };
   return { kind: tool, start, end } as DrawingGeometry;
 }
 
@@ -177,6 +179,7 @@ export function TradingChart({ symbol, theme }: Props) {
   const [semanticType, setSemanticType] = useState<string>('FVG');
   const [role, setRole] = useState<(typeof ROLES)[number]>('AREA');
   const [objects, setObjects] = useState<readonly ChartDrawing[]>([]);
+  const [hiddenObjectIds, setHiddenObjectIds] = useState<ReadonlySet<string>>(() => new Set<string>());
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [selectedCandle, setSelectedCandle] = useState<AriseCandle | null>(null);
   const [projectionStack, setProjectionStack] = useState<readonly CandleProjection[]>([]);
@@ -187,9 +190,12 @@ export function TradingChart({ symbol, theme }: Props) {
   const [overlayEpoch, setOverlayEpoch] = useState(0);
   const [status, setStatus] = useState('WAITING FOR MT5');
 
-  const visibleObjects = useMemo(() => objects.filter((entry) => entry.timeframe === null || entry.timeframe === timeframe), [objects, timeframe]);
-  const selectedObject = objects.find((entry) => entry.id === selectedObjectId) ?? null;
+  const hiddenStorageKey = useMemo(() => `arise.chart.hidden-objects.${symbol}`, [symbol]);
+  const activeObjects = useMemo(() => objects.filter((entry) => !hiddenObjectIds.has(entry.id)), [hiddenObjectIds, objects]);
+  const visibleObjects = useMemo(() => activeObjects.filter((entry) => entry.timeframe === null || entry.timeframe === timeframe), [activeObjects, timeframe]);
+  const selectedObject = activeObjects.find((entry) => entry.id === selectedObjectId) ?? null;
   const instrument = catalog?.instruments.find((entry) => entry.symbol === symbol) ?? null;
+  const hiddenCount = objects.length - activeObjects.length;
   const draftDrawing = useMemo<ChartDrawing | null>(() => draftGeometry ? ({
     id: '__draft__',
     versionId: '__draft__',
@@ -225,6 +231,33 @@ export function TradingChart({ symbol, theme }: Props) {
       setStatus('MT5 DATA ERROR · OFFLINE DEMO');
     }
   }, [symbol, timeframe]);
+
+  const hideObject = useCallback((marketObjectId: string) => {
+    setHiddenObjectIds((current) => {
+      const next = new Set(current);
+      next.add(marketObjectId);
+      try { window.localStorage.setItem(hiddenStorageKey, JSON.stringify([...next])); } catch { /* local persistence is best effort */ }
+      return next;
+    });
+    setSelectedObjectId((current) => current === marketObjectId ? null : current);
+    setStatus('OBJECT DELETED FROM CHART');
+  }, [hiddenStorageKey]);
+
+  const restoreHiddenObjects = useCallback(() => {
+    setHiddenObjectIds(new Set<string>());
+    try { window.localStorage.removeItem(hiddenStorageKey); } catch { /* local persistence is best effort */ }
+    setStatus('HIDDEN OBJECTS RESTORED');
+  }, [hiddenStorageKey]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(hiddenStorageKey);
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      setHiddenObjectIds(new Set(Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : []));
+    } catch {
+      setHiddenObjectIds(new Set<string>());
+    }
+  }, [hiddenStorageKey]);
 
   useEffect(() => {
     window.arise?.getChartCatalog().then(setCatalog).catch(() => setStatus('CATALOG ERROR'));
@@ -287,24 +320,33 @@ export function TradingChart({ symbol, theme }: Props) {
   }, [candles]);
 
   useEffect(() => {
-    const cancel = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      dragStartRef.current = null;
-      setDraftGeometry(null);
-      setTool('SELECT');
+    const handleKey = (event: KeyboardEvent) => {
+      const target = event.target;
+      const editing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable);
+      if (editing) return;
+      if (event.key === 'Escape') {
+        dragStartRef.current = null;
+        setDraftGeometry(null);
+        setTool('SELECT');
+        return;
+      }
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedObjectId) {
+        event.preventDefault();
+        hideObject(selectedObjectId);
+      }
     };
-    window.addEventListener('keydown', cancel);
-    return () => window.removeEventListener('keydown', cancel);
-  }, []);
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [hideObject, selectedObjectId]);
 
   const persistDrawing = async (start: ChartPoint, end: ChartPoint) => {
     if (tool === 'SELECT') return;
     const geometry = geometryForTool(tool, start, end, semanticType);
-    const sameTypeCount = objects.filter((entry)=>entry.semanticType===semanticType).length + 1;
+    const sameTypeCount = activeObjects.filter((entry)=>entry.semanticType===semanticType).length + 1;
     const created = await window.arise.createChartObject({
       symbol,
       timeframe,
-      geometryType: tool,
+      geometryType: geometry.kind,
       semanticType,
       role,
       name: `${timeframe} ${semanticType.replaceAll('_',' ')} #${sameTypeCount}`,
@@ -395,7 +437,7 @@ export function TradingChart({ symbol, theme }: Props) {
       </header>
 
       <div className="chart-stage">
-        <div className="drawing-toolbar" aria-label="Drawing tools">{(['SELECT','LINE','RAY','RECTANGLE','TRENDLINE','POINT','TEXT'] as const).map((entry)=><button key={entry} className={tool===entry?'active':''} onClick={()=>{setTool(entry);setDraftGeometry(null);dragStartRef.current=null;}} title={entry}><Icon name={TOOL_ICON[entry]}/></button>)}</div>
+        <div className="drawing-toolbar" aria-label="Drawing tools">{(['SELECT','HORIZONTAL','LINE','RAY','RECTANGLE','TRENDLINE','POINT','TEXT'] as const).map((entry)=><button key={entry} className={tool===entry?'active':''} onClick={()=>{setTool(entry);setDraftGeometry(null);dragStartRef.current=null;}} title={entry === 'HORIZONTAL' ? 'HORIZONTAL LINE' : entry}><Icon name={TOOL_ICON[entry]}/></button>)}</div>
         <div ref={hostRef} className="arise-chart-host" data-testid="lightweight-chart-host"/>
         <svg data-epoch={overlayEpoch} className={`market-overlay ${tool!=='SELECT'?'drawing-active':''}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel}>
           {projectionStack.map((projection,index)=><ProjectionShape key={projection.id} projection={projection} controller={controllerRef.current!} active={index===projectionStack.length-1}/>) }
@@ -436,14 +478,15 @@ export function TradingChart({ symbol, theme }: Props) {
           <div><span>Meaning</span><b>{selectedObject.semanticType}</b></div>
           <div><span>Role</span><b>{selectedObject.role}</b></div>
           <div><span>Version</span><b>v{selectedObject.versionNo}</b></div>
-          <div className="object-nudge"><button onClick={()=>nudgeSelected(1)}>+1 PIP</button><button onClick={()=>nudgeSelected(-1)}>−1 PIP</button></div>
-          <small>Nudging creates a new immutable MarketObjectVersion; earlier geometry remains reconstructable.</small>
+          <div className="object-nudge"><button onClick={()=>nudgeSelected(1)}>+1 PIP</button><button onClick={()=>nudgeSelected(-1)}>−1 PIP</button><button onClick={()=>hideObject(selectedObject.id)}>DELETE</button></div>
+          <small>Delete/Backspace removes the object from the chart while its immutable persisted history remains untouched. Nudging creates a new MarketObjectVersion.</small>
         </section> : null}
       </> : null}
 
       {inspectorTab === 'LAYERS' ? <section className="inspector-section object-list-section">
         <div className="inspector-heading"><span>VISIBLE LAYERS</span><b>{visibleObjects.length}</b></div>
-        <p>Select a layer to select the corresponding Market Object on the chart.</p>
+        <p>Select a layer to select the corresponding Market Object on the chart. Deleted chart objects remain preserved in underlying Market Object history.</p>
+        {hiddenCount > 0 ? <button className="ghost-button" onClick={restoreHiddenObjects}>RESTORE {hiddenCount} HIDDEN</button> : null}
         <div className="object-list">{visibleObjects.length ? visibleObjects.map((entry)=><button key={entry.id} className={entry.id===selectedObjectId?'selected':''} onClick={()=>setSelectedObjectId(entry.id)}><span className={`object-role-marker role-${entry.role.toLowerCase()}`}/><div><strong>{entry.name}</strong><span>{entry.geometryType} · {entry.timeframe ?? 'GLOBAL'}</span></div><b>v{entry.versionNo}</b></button>) : <div className="object-empty">No visible layers.</div>}</div>
       </section> : null}
 
