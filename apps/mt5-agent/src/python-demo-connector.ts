@@ -24,6 +24,7 @@ export interface PythonMt5DemoConnectorOptions {
   readonly ledgerPath: string;
   readonly symbolMappings: readonly RealMt5SymbolMapping[];
   readonly timeframes?: readonly string[];
+  readonly historyBars?: number;
   readonly magic?: number;
   readonly timeoutMs?: number;
   readonly now?: () => number;
@@ -50,6 +51,18 @@ type AgentPayload = ReturnType<typeof mt5AgentPayloadSchema.parse>;
 const bridgePath = process.env.ARISE_MT5_BRIDGE_PATH?.trim() || fileURLToPath(
   new URL('../python/mt5_bridge.py', import.meta.url),
 );
+const marketDataBridgePath = process.env.ARISE_MT5_MARKET_DATA_BRIDGE_PATH?.trim() || fileURLToPath(
+  new URL('../python/mt5_market_data_bridge.py', import.meta.url),
+);
+const DEFAULT_MARKET_DATA_TIMEFRAMES = Object.freeze([
+  'M1',
+  'M5',
+  'M15',
+  'H1',
+  'H4',
+  'D1',
+  'W1',
+] as const);
 
 function rejectedExecution(
   command: Mt5ExecutionCommand,
@@ -330,7 +343,8 @@ export class PythonMt5DemoConnector implements BrokerMutationConnector {
       terminalPath: this.options.terminalPath,
       ledgerPath: this.options.ledgerPath,
       symbolMappings: this.options.symbolMappings,
-      timeframes: this.options.timeframes ?? ['M1', 'M5'],
+      timeframes: this.options.timeframes ?? DEFAULT_MARKET_DATA_TIMEFRAMES,
+      historyBars: this.options.historyBars ?? 300,
       magic: this.options.magic ?? 260912,
       ...(command ? { command } : {}),
     });
@@ -342,7 +356,7 @@ export class PythonMt5DemoConnector implements BrokerMutationConnector {
       };
     const result = spawnSync(
       this.options.pythonExecutable,
-      [bridgePath],
+      [operation === 'snapshot' ? marketDataBridgePath : bridgePath],
       {
         input: JSON.stringify(request),
         encoding: 'utf8',
@@ -386,10 +400,11 @@ export function pythonMt5OptionsFromEnvironment(): PythonMt5DemoConnectorOptions
         'mt5-agent-ledger.json',
       ),
     symbolMappings: mappings,
-    timeframes: (process.env.ARISE_MT5_TIMEFRAMES ?? 'M1,M5')
+    timeframes: (process.env.ARISE_MT5_TIMEFRAMES ?? DEFAULT_MARKET_DATA_TIMEFRAMES.join(','))
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean),
+    historyBars: Number(process.env.ARISE_MT5_HISTORY_BARS ?? 300),
     magic: Number(process.env.ARISE_MT5_MAGIC ?? 260912),
   };
 }
