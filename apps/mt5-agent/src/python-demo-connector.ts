@@ -63,6 +63,8 @@ const DEFAULT_MARKET_DATA_TIMEFRAMES = Object.freeze([
   'D1',
   'W1',
 ] as const);
+const LIVE_TAIL_BARS = 3;
+const DEEP_HISTORY_REFRESH_EVERY = 30;
 
 function rejectedExecution(
   command: Mt5ExecutionCommand,
@@ -104,6 +106,7 @@ function rejectedManagement(
 export class PythonMt5DemoConnector implements BrokerMutationConnector {
   private lastSnapshot: Mt5Snapshot | null = null;
   private lastTerminalMetadata: RealMt5Probe['terminalMetadata'] | null = null;
+  private snapshotRequestCount = 0;
   private readonly quoteObservations = new Map<
     string,
     Readonly<{ sequence: number; receivedAt: string }>
@@ -135,6 +138,7 @@ export class PythonMt5DemoConnector implements BrokerMutationConnector {
       this.lastSnapshot = snapshot;
       return snapshot;
     } catch (error) {
+      this.snapshotRequestCount = 0;
       const snapshot = mt5SnapshotSchema.parse({
         snapshotId: randomUUID(),
         complete: false,
@@ -338,13 +342,17 @@ export class PythonMt5DemoConnector implements BrokerMutationConnector {
     readonly payloads?: unknown;
     readonly terminalMetadata?: unknown;
   } {
+    const snapshotIndex = operation === 'snapshot' ? this.snapshotRequestCount++ : -1;
+    const deepHistory = operation === 'snapshot' && (
+      snapshotIndex < 2 || snapshotIndex % DEEP_HISTORY_REFRESH_EVERY === 0
+    );
     const request = Object.freeze({
       operation,
       terminalPath: this.options.terminalPath,
       ledgerPath: this.options.ledgerPath,
       symbolMappings: this.options.symbolMappings,
       timeframes: this.options.timeframes ?? DEFAULT_MARKET_DATA_TIMEFRAMES,
-      historyBars: this.options.historyBars ?? 300,
+      historyBars: deepHistory ? (this.options.historyBars ?? 300) : LIVE_TAIL_BARS,
       magic: this.options.magic ?? 260912,
       ...(command ? { command } : {}),
     });
