@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import {
   AriseChartController,
   CHART_TIMEFRAMES,
-  createDemoCandles,
   decodeDrawingGeometry,
   encodeDrawingGeometry,
   lowerTimeframes,
@@ -18,6 +17,7 @@ import { Icon } from './icons';
 
 type DrawingTool = 'SELECT' | 'LINE' | 'RAY' | 'RECTANGLE' | 'TRENDLINE' | 'POINT' | 'TEXT';
 type Theme = 'dark' | 'light';
+type InspectorTab = 'OBJECTS' | 'LAYERS' | 'EXECUTION';
 
 interface Props {
   readonly symbol: string;
@@ -36,6 +36,14 @@ const TOOL_ICON: Record<DrawingTool, Parameters<typeof Icon>[0]['name']> = {
 
 const SEMANTICS = ['GENERIC_ZONE', 'FVG', 'ORDER_BLOCK', 'LIQUIDITY_ZONE', 'RANGE', 'PREMIUM_DISCOUNT', 'TARGET_ZONE', 'INVALIDATION_ZONE'] as const;
 const ROLES = ['REFERENCE', 'AREA', 'TRIGGER', 'TARGET', 'INVALIDATION', 'PROTECTION', 'CONFIRMATION', 'ORIGIN'] as const;
+const MT5_TIMEFRAME: Readonly<Record<ChartTimeframeCode, string>> = Object.freeze({
+  M5: 'M5',
+  M15: 'M15',
+  H1: 'H1',
+  H4: 'H4',
+  D: 'D1',
+  W: 'W1',
+});
 
 function toDrawing(raw: Awaited<ReturnType<typeof window.arise.listChartObjects>>[number]): ChartDrawing | null {
   const geometry = decodeDrawingGeometry(raw.geometryJson);
@@ -55,6 +63,25 @@ function toDrawing(raw: Awaited<ReturnType<typeof window.arise.listChartObjects>
   };
 }
 
+function toChartCandles(
+  workspace: Awaited<ReturnType<typeof window.arise.getMt5Workspace>>,
+  symbol: string,
+  timeframe: ChartTimeframeCode,
+): readonly AriseCandle[] {
+  const mt5Timeframe = MT5_TIMEFRAME[timeframe];
+  return workspace.candles
+    .filter((entry) => entry.canonicalSymbol === symbol && entry.timeframe === mt5Timeframe)
+    .map((entry) => ({
+      time: Math.floor(Date.parse(entry.openTime) / 1000),
+      open: entry.open,
+      high: entry.high,
+      low: entry.low,
+      close: entry.close,
+    }))
+    .filter((entry) => Number.isFinite(entry.time))
+    .sort((left, right) => left.time - right.time);
+}
+
 function shiftGeometry(geometry: DrawingGeometry, priceDelta: number): DrawingGeometry {
   const shift = (point: ChartPoint) => ({ ...point, price: point.price + priceDelta });
   switch (geometry.kind) {
@@ -71,10 +98,17 @@ function shiftGeometry(geometry: DrawingGeometry, priceDelta: number): DrawingGe
   }
 }
 
-function DrawingShape({ drawing, controller, selected, onSelect }: {
+function geometryForTool(tool: Exclude<DrawingTool, 'SELECT'>, start: ChartPoint, end: ChartPoint, semanticType: string): DrawingGeometry {
+  if (tool === 'POINT') return { kind: 'POINT', point: end };
+  if (tool === 'TEXT') return { kind: 'TEXT', point: end, text: semanticType.replaceAll('_', ' ') };
+  return { kind: tool, start, end } as DrawingGeometry;
+}
+
+function DrawingShape({ drawing, controller, selected, draft = false, onSelect }: {
   readonly drawing: ChartDrawing;
   readonly controller: AriseChartController;
   readonly selected: boolean;
+  readonly draft?: boolean;
   readonly onSelect: () => void;
 }) {
   const coord = (point: ChartPoint) => {
@@ -82,12 +116,17 @@ function DrawingShape({ drawing, controller, selected, onSelect }: {
     const y = controller.priceToY(point.price);
     return x === null || y === null ? null : { x, y };
   };
-  const className = `market-shape market-shape-${drawing.role.toLowerCase()} ${selected ? 'selected' : ''}`;
+  const className = `market-shape market-shape-${drawing.role.toLowerCase()} ${selected ? 'selected' : ''} ${draft ? 'draft' : ''}`;
   const geometry = drawing.geometry;
+  const select = (event: { stopPropagation(): void }) => {
+    if (draft) return;
+    event.stopPropagation();
+    onSelect();
+  };
   if (geometry.kind === 'RECTANGLE') {
     const a = coord(geometry.start); const b = coord(geometry.end);
     if (!a || !b) return null;
-    return <rect className={className} x={Math.min(a.x,b.x)} y={Math.min(a.y,b.y)} width={Math.abs(b.x-a.x)} height={Math.abs(b.y-a.y)} rx="3" onPointerDown={(event: { stopPropagation(): void })=>{event.stopPropagation();onSelect();}}/>;
+    return <rect className={className} x={Math.min(a.x,b.x)} y={Math.min(a.y,b.y)} width={Math.abs(b.x-a.x)} height={Math.abs(b.y-a.y)} rx="3" onPointerDown={select}/>;
   }
   if (geometry.kind === 'LINE' || geometry.kind === 'RAY' || geometry.kind === 'TRENDLINE') {
     const a = coord(geometry.start); const b = coord(geometry.end);
@@ -98,17 +137,17 @@ function DrawingShape({ drawing, controller, selected, onSelect }: {
       : 1;
     const endX = geometry.kind === 'RAY' ? a.x + dx * rayScale : b.x;
     const endY = geometry.kind === 'RAY' ? a.y + (b.y - a.y) * rayScale : b.y;
-    return <line className={className} x1={a.x} y1={a.y} x2={endX} y2={endY} onPointerDown={(event: { stopPropagation(): void })=>{event.stopPropagation();onSelect();}}/>;
+    return <line className={className} x1={a.x} y1={a.y} x2={endX} y2={endY} onPointerDown={select}/>;
   }
   if (geometry.kind === 'TEXT') {
     const valuePoint = coord(geometry.point);
     if (!valuePoint) return null;
-    return <text className={className} x={valuePoint.x+6} y={valuePoint.y-6} onPointerDown={(event: { stopPropagation(): void })=>{event.stopPropagation();onSelect();}}>{geometry.text}</text>;
+    return <text className={className} x={valuePoint.x+6} y={valuePoint.y-6} onPointerDown={select}>{geometry.text}</text>;
   }
   if (geometry.kind === 'POINT' || geometry.kind === 'CANDLE_REFERENCE') {
     const valuePoint = coord(geometry.point);
     if (!valuePoint) return null;
-    return <circle className={className} cx={valuePoint.x} cy={valuePoint.y} r={selected ? 6 : 4} onPointerDown={(event: { stopPropagation(): void })=>{event.stopPropagation();onSelect();}}/>;
+    return <circle className={className} cx={valuePoint.x} cy={valuePoint.y} r={selected ? 6 : 4} onPointerDown={select}/>;
   }
   return null;
 }
@@ -129,6 +168,7 @@ export function TradingChart({ symbol, theme }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<AriseChartController | null>(null);
   const dragStartRef = useRef<ChartPoint | null>(null);
+  const fitAfterNextDataRef = useRef(true);
   const [timeframe, setTimeframe] = useState<ChartTimeframeCode>('H1');
   const [tool, setTool] = useState<DrawingTool>('SELECT');
   const [semanticType, setSemanticType] = useState<string>('FVG');
@@ -138,19 +178,49 @@ export function TradingChart({ symbol, theme }: Props) {
   const [selectedCandle, setSelectedCandle] = useState<AriseCandle | null>(null);
   const [projectionStack, setProjectionStack] = useState<readonly CandleProjection[]>([]);
   const [catalog, setCatalog] = useState<Awaited<ReturnType<typeof window.arise.getChartCatalog>> | null>(null);
+  const [candles, setCandles] = useState<readonly AriseCandle[]>([]);
+  const [draftGeometry, setDraftGeometry] = useState<DrawingGeometry | null>(null);
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('OBJECTS');
   const [overlayEpoch, setOverlayEpoch] = useState(0);
-  const [status, setStatus] = useState('DEMO SERIES');
+  const [status, setStatus] = useState('WAITING FOR MT5');
 
-  const candles = useMemo(() => createDemoCandles(symbol, timeframe), [symbol, timeframe]);
   const visibleObjects = useMemo(() => objects.filter((entry) => entry.timeframe === null || entry.timeframe === timeframe), [objects, timeframe]);
   const selectedObject = objects.find((entry) => entry.id === selectedObjectId) ?? null;
   const instrument = catalog?.instruments.find((entry) => entry.symbol === symbol) ?? null;
+  const draftDrawing = useMemo<ChartDrawing | null>(() => draftGeometry ? ({
+    id: '__draft__',
+    versionId: '__draft__',
+    versionNo: 1,
+    geometryType: draftGeometry.kind,
+    semanticType,
+    role,
+    name: 'Draft',
+    timeframe,
+    geometry: draftGeometry,
+  } as ChartDrawing) : null, [draftGeometry, role, semanticType, timeframe]);
 
   const loadObjects = useCallback(async () => {
     if (!window.arise) return;
     const rows = await window.arise.listChartObjects({ symbol });
     setObjects(rows.map(toDrawing).filter((entry): entry is ChartDrawing => entry !== null));
   }, [symbol]);
+
+  const loadMarketData = useCallback(async () => {
+    if (!window.arise) return;
+    try {
+      const workspace = await window.arise.getMt5Workspace();
+      const nextCandles = toChartCandles(workspace, symbol, timeframe);
+      setCandles(nextCandles);
+      if (workspace.connection.state === 'CONNECTED' && nextCandles.length > 0)
+        setStatus('MT5 LIVE');
+      else if (workspace.connection.state === 'CONNECTED')
+        setStatus(`NO ${timeframe} DATA`);
+      else
+        setStatus(`MT5 ${workspace.connection.state}`);
+    } catch {
+      setStatus('MT5 DATA ERROR');
+    }
+  }, [symbol, timeframe]);
 
   useEffect(() => {
     window.arise?.getChartCatalog().then(setCatalog).catch(() => setStatus('CATALOG ERROR'));
@@ -164,13 +234,19 @@ export function TradingChart({ symbol, theme }: Props) {
   }, [loadObjects]);
 
   useEffect(() => {
+    fitAfterNextDataRef.current = true;
+    setCandles([]);
+    void loadMarketData();
+    const timer = window.setInterval(() => void loadMarketData(), 1_000);
+    return () => window.clearInterval(timer);
+  }, [loadMarketData]);
+
+  useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
     const controller = new AriseChartController(host, theme);
     controllerRef.current = controller;
     controller.onClick((click) => setSelectedCandle(click.candle));
-    controller.setData(candles);
-    controller.fitContent();
     const onViewport = () => setOverlayEpoch((value) => value + 1);
     host.addEventListener('wheel', onViewport, { passive: true });
     host.addEventListener('pointermove', onViewport);
@@ -197,24 +273,34 @@ export function TradingChart({ symbol, theme }: Props) {
 
   useEffect(() => {
     const controller = controllerRef.current;
-    if (!controller) return;
+    if (!controller || candles.length === 0) return;
     controller.setData(candles);
-    controller.fitContent();
-    setSelectedCandle(null);
+    if (fitAfterNextDataRef.current) {
+      controller.fitContent();
+      fitAfterNextDataRef.current = false;
+    }
     setOverlayEpoch((value)=>value+1);
   }, [candles]);
 
+  useEffect(() => {
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      dragStartRef.current = null;
+      setDraftGeometry(null);
+      setTool('SELECT');
+    };
+    window.addEventListener('keydown', cancel);
+    return () => window.removeEventListener('keydown', cancel);
+  }, []);
+
   const persistDrawing = async (start: ChartPoint, end: ChartPoint) => {
-    const geometryType = tool === 'SELECT' ? 'RECTANGLE' : tool;
-    let geometry: DrawingGeometry;
-    if (geometryType === 'POINT') geometry = { kind: 'POINT', point: end };
-    else if (geometryType === 'TEXT') geometry = { kind: 'TEXT', point: end, text: semanticType.replaceAll('_',' ') };
-    else geometry = { kind: geometryType, start, end } as DrawingGeometry;
+    if (tool === 'SELECT') return;
+    const geometry = geometryForTool(tool, start, end, semanticType);
     const sameTypeCount = objects.filter((entry)=>entry.semanticType===semanticType).length + 1;
     const created = await window.arise.createChartObject({
       symbol,
       timeframe,
-      geometryType,
+      geometryType: tool,
       semanticType,
       role,
       name: `${timeframe} ${semanticType.replaceAll('_',' ')} #${sameTypeCount}`,
@@ -235,7 +321,15 @@ export function TradingChart({ symbol, theme }: Props) {
     const point = controllerRef.current?.pointFromClient(event.clientX, event.clientY) ?? null;
     if (!point) return;
     dragStartRef.current = point;
+    setDraftGeometry(geometryForTool(tool, point, point, semanticType));
     event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const pointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (tool === 'SELECT' || !dragStartRef.current) return;
+    const end = controllerRef.current?.pointFromClient(event.clientX, event.clientY) ?? null;
+    if (!end) return;
+    setDraftGeometry(geometryForTool(tool, dragStartRef.current, end, semanticType));
   };
 
   const pointerUp = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -243,8 +337,14 @@ export function TradingChart({ symbol, theme }: Props) {
     const start = dragStartRef.current;
     const end = controllerRef.current?.pointFromClient(event.clientX, event.clientY) ?? null;
     dragStartRef.current = null;
+    setDraftGeometry(null);
     if (!start || !end) return;
     persistDrawing(start, end).catch(() => setStatus('SAVE ERROR'));
+  };
+
+  const pointerCancel = () => {
+    dragStartRef.current = null;
+    setDraftGeometry(null);
   };
 
   const nudgeSelected = async (direction: 1 | -1) => {
@@ -257,16 +357,25 @@ export function TradingChart({ symbol, theme }: Props) {
     setStatus(`REVISION v${drawing.versionNo} SAVED`);
   };
 
+  const chooseTimeframe = (next: ChartTimeframeCode) => {
+    fitAfterNextDataRef.current = true;
+    setTimeframe(next);
+    setProjectionStack([]);
+    setSelectedCandle(null);
+  };
+
   const expandTo = (targetTimeframe: ChartTimeframeCode) => {
     if (!selectedCandle) return;
     const projection = projectCandle(selectedCandle, timeframe, targetTimeframe);
     setProjectionStack((current)=>[...current,projection]);
+    fitAfterNextDataRef.current = true;
     setTimeframe(targetTimeframe);
   };
 
   const showParent = () => {
     const current = projectionStack.at(-1);
     if (!current) return;
+    fitAfterNextDataRef.current = true;
     setTimeframe(current.sourceTimeframe);
     setProjectionStack((stack)=>stack.slice(0,-1));
   };
@@ -275,18 +384,19 @@ export function TradingChart({ symbol, theme }: Props) {
     <section className="chart-workbench">
       <header className="chart-toolbar m4-chart-toolbar">
         <div className="chart-symbol-block"><strong>{symbol}</strong><span>{instrument?.displayName ?? 'Market'}</span></div>
-        <div className="timeframe-tabs">{CHART_TIMEFRAMES.map((entry)=><button key={entry} className={entry===timeframe?'selected':''} onClick={()=>{setTimeframe(entry);setProjectionStack([]);}}>{entry}</button>)}</div>
+        <div className="timeframe-tabs">{CHART_TIMEFRAMES.map((entry)=><button key={entry} className={entry===timeframe?'selected':''} onClick={()=>chooseTimeframe(entry)}>{entry}</button>)}</div>
         <div className="chart-context-mode"><button className="selected">MASTER</button><button disabled>COLONY</button></div>
         <button className="chart-fit-button" onClick={()=>controllerRef.current?.fitContent()} title="Fit chart">FIT</button>
-        <span className="offline-pill demo-pill"><span className="status-dot status-dot-warning"/> {status}</span>
+        <span className="offline-pill demo-pill"><span className={`status-dot ${status==='MT5 LIVE'?'status-dot-good':'status-dot-warning'}`}/> {status}</span>
       </header>
 
       <div className="chart-stage">
-        <div className="drawing-toolbar" aria-label="Drawing tools">{(['SELECT','LINE','RAY','RECTANGLE','TRENDLINE','POINT','TEXT'] as const).map((entry)=><button key={entry} className={tool===entry?'active':''} onClick={()=>setTool(entry)} title={entry}><Icon name={TOOL_ICON[entry]}/></button>)}</div>
+        <div className="drawing-toolbar" aria-label="Drawing tools">{(['SELECT','LINE','RAY','RECTANGLE','TRENDLINE','POINT','TEXT'] as const).map((entry)=><button key={entry} className={tool===entry?'active':''} onClick={()=>{setTool(entry);setDraftGeometry(null);dragStartRef.current=null;}} title={entry}><Icon name={TOOL_ICON[entry]}/></button>)}</div>
         <div ref={hostRef} className="arise-chart-host" data-testid="lightweight-chart-host"/>
-        <svg data-epoch={overlayEpoch} className={`market-overlay ${tool!=='SELECT'?'drawing-active':''}`} onPointerDown={pointerDown} onPointerUp={pointerUp}>
+        <svg data-epoch={overlayEpoch} className={`market-overlay ${tool!=='SELECT'?'drawing-active':''}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel}>
           {projectionStack.map((projection,index)=><ProjectionShape key={projection.id} projection={projection} controller={controllerRef.current!} active={index===projectionStack.length-1}/>) }
           {controllerRef.current ? visibleObjects.map((drawing)=><DrawingShape key={`${drawing.id}:${drawing.versionNo}`} drawing={drawing} controller={controllerRef.current!} selected={drawing.id===selectedObjectId} onSelect={()=>setSelectedObjectId(drawing.id)}/>) : null}
+          {controllerRef.current && draftDrawing ? <DrawingShape drawing={draftDrawing} controller={controllerRef.current} selected={false} draft onSelect={()=>undefined}/> : null}
         </svg>
         <div className="chart-attribution-note">Chart engine: TradingView Lightweight Charts™</div>
       </div>
@@ -295,37 +405,47 @@ export function TradingChart({ symbol, theme }: Props) {
         <div className="projection-breadcrumb"><span>CONTEXT</span><button onClick={()=>setProjectionStack([])}>{timeframe}</button>{projectionStack.map((projection)=><span key={projection.id}>› {projection.label}</span>)}</div>
         <div className="projection-actions">
           {projectionStack.length ? <button onClick={showParent}>SHOW PARENT CANDLE</button> : null}
-          <span>{selectedCandle ? `Selected ${timeframe} candle · H ${selectedCandle.high.toFixed(instrument?.priceDigits ?? 5)} / L ${selectedCandle.low.toFixed(instrument?.priceDigits ?? 5)}` : 'Click a candle to enable timeframe projection'}</span>
+          <span>{selectedCandle ? `Selected ${timeframe} candle · H ${selectedCandle.high.toFixed(instrument?.priceDigits ?? 5)} / L ${selectedCandle.low.toFixed(instrument?.priceDigits ?? 5)}` : candles.length ? 'Click a candle to enable timeframe projection' : `Waiting for ${symbol} ${timeframe} market data`}</span>
           {selectedCandle ? lowerTimeframes(timeframe).map((target)=><button key={target} onClick={()=>expandTo(target)}>EXPAND TO {target}</button>) : null}
         </div>
       </footer>
     </section>
 
     <aside className="chart-inspector">
-      <div className="inspector-tabs"><button className="active">OBJECTS</button><button>LAYERS</button><button disabled>EXECUTION</button></div>
-      <section className="inspector-section semantic-controls">
-        <span className="section-label">NEW MARKET OBJECT</span>
-        <label>Meaning<select value={semanticType} onChange={(event: { target: { value: string } })=>setSemanticType(event.target.value)}>{SEMANTICS.map((entry)=><option key={entry}>{entry}</option>)}</select></label>
-        <label>Role<select value={role} onChange={(event: { target: { value: string } })=>setRole(event.target.value as typeof role)}>{ROLES.map((entry)=><option key={entry}>{entry}</option>)}</select></label>
-        <p>Choose geometry on the chart toolbar, then drag on the chart. Geometry defines shape; these properties define meaning.</p>
-      </section>
-      <section className="inspector-section object-list-section">
-        <div className="inspector-heading"><span>MARKET OBJECTS</span><b>{visibleObjects.length}</b></div>
-        <div className="object-list">{visibleObjects.length ? visibleObjects.map((entry)=><button key={entry.id} className={entry.id===selectedObjectId?'selected':''} onClick={()=>setSelectedObjectId(entry.id)}><span className={`object-role-marker role-${entry.role.toLowerCase()}`}/><div><strong>{entry.name}</strong><span>{entry.semanticType} · {entry.role}</span></div><b>v{entry.versionNo}</b></button>) : <div className="object-empty">No Market Objects on {symbol} {timeframe}.<br/>Draw one directly on the chart.</div>}</div>
-      </section>
-      {selectedObject ? <section className="inspector-section selected-object-card">
-        <span className="section-label">SELECTED OBJECT</span>
-        <h3>{selectedObject.name}</h3>
-        <div><span>Geometry</span><b>{selectedObject.geometryType}</b></div>
-        <div><span>Meaning</span><b>{selectedObject.semanticType}</b></div>
-        <div><span>Role</span><b>{selectedObject.role}</b></div>
-        <div><span>Version</span><b>v{selectedObject.versionNo}</b></div>
-        <div className="object-nudge"><button onClick={()=>nudgeSelected(1)}>+1 PIP</button><button onClick={()=>nudgeSelected(-1)}>−1 PIP</button></div>
-        <small>Nudging creates a new immutable MarketObjectVersion; earlier geometry remains reconstructable.</small>
+      <div className="inspector-tabs">{(['OBJECTS','LAYERS','EXECUTION'] as const).map((entry)=><button key={entry} className={inspectorTab===entry?'active':''} onClick={()=>setInspectorTab(entry)}>{entry}</button>)}</div>
+
+      {inspectorTab === 'OBJECTS' ? <>
+        <section className="inspector-section semantic-controls">
+          <span className="section-label">NEW MARKET OBJECT</span>
+          <label>Meaning<select value={semanticType} onChange={(event: { target: { value: string } })=>setSemanticType(event.target.value)}>{SEMANTICS.map((entry)=><option key={entry}>{entry}</option>)}</select></label>
+          <label>Role<select value={role} onChange={(event: { target: { value: string } })=>setRole(event.target.value as typeof role)}>{ROLES.map((entry)=><option key={entry}>{entry}</option>)}</select></label>
+          <p>Choose geometry on the chart toolbar, then drag on the chart. Geometry previews live while dragging and is committed only when released.</p>
+        </section>
+        <section className="inspector-section object-list-section">
+          <div className="inspector-heading"><span>MARKET OBJECTS</span><b>{visibleObjects.length}</b></div>
+          <div className="object-list">{visibleObjects.length ? visibleObjects.map((entry)=><button key={entry.id} className={entry.id===selectedObjectId?'selected':''} onClick={()=>setSelectedObjectId(entry.id)}><span className={`object-role-marker role-${entry.role.toLowerCase()}`}/><div><strong>{entry.name}</strong><span>{entry.semanticType} · {entry.role}</span></div><b>v{entry.versionNo}</b></button>) : <div className="object-empty">No Market Objects on {symbol} {timeframe}.<br/>Draw one directly on the chart.</div>}</div>
+        </section>
+        {selectedObject ? <section className="inspector-section selected-object-card">
+          <span className="section-label">SELECTED OBJECT</span>
+          <h3>{selectedObject.name}</h3>
+          <div><span>Geometry</span><b>{selectedObject.geometryType}</b></div>
+          <div><span>Meaning</span><b>{selectedObject.semanticType}</b></div>
+          <div><span>Role</span><b>{selectedObject.role}</b></div>
+          <div><span>Version</span><b>v{selectedObject.versionNo}</b></div>
+          <div className="object-nudge"><button onClick={()=>nudgeSelected(1)}>+1 PIP</button><button onClick={()=>nudgeSelected(-1)}>−1 PIP</button></div>
+          <small>Nudging creates a new immutable MarketObjectVersion; earlier geometry remains reconstructable.</small>
+        </section> : null}
+      </> : null}
+
+      {inspectorTab === 'LAYERS' ? <section className="inspector-section object-list-section">
+        <div className="inspector-heading"><span>VISIBLE LAYERS</span><b>{visibleObjects.length}</b></div>
+        <p>Select a layer to select the corresponding Market Object on the chart.</p>
+        <div className="object-list">{visibleObjects.length ? visibleObjects.map((entry)=><button key={entry.id} className={entry.id===selectedObjectId?'selected':''} onClick={()=>setSelectedObjectId(entry.id)}><span className={`object-role-marker role-${entry.role.toLowerCase()}`}/><div><strong>{entry.name}</strong><span>{entry.geometryType} · {entry.timeframe ?? 'GLOBAL'}</span></div><b>v{entry.versionNo}</b></button>) : <div className="object-empty">No visible layers.</div>}</div>
       </section> : null}
-      <section className="inspector-section execution-lock">
-        <span className="section-label">EXECUTION</span><strong>LOCKED</strong><p>Charting is operational, but broker actions remain unavailable until the explicit MT5 demo execution gate.</p>
-      </section>
+
+      {inspectorTab === 'EXECUTION' ? <section className="inspector-section execution-lock">
+        <span className="section-label">EXECUTION</span><strong>LOCKED</strong><p>The tab remains inspectable while execution is gated. Broker mutation stays behind the existing explicit MT5 demo execution gateway.</p>
+      </section> : null}
     </aside>
   </div>;
 }
