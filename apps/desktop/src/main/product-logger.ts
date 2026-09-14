@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, renameSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, renameSync, rmSync, statSync } from 'node:fs';
 
 export interface ProductLogger {
   readonly info: (event: string, detail?: string) => void;
@@ -20,6 +20,7 @@ export function createProductLogger(
   context: Readonly<{ version: string; buildCommit: string }>,
 ): ProductLogger {
   if (existsSync(filename) && statSync(filename).size > 5 * 1024 * 1024) {
+    rmSync(`${filename}.1`, { force: true });
     renameSync(filename, `${filename}.1`);
   }
   const write = (level: string, event: string, detail?: unknown) => {
