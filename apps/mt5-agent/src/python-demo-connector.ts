@@ -47,7 +47,7 @@ export interface RealMt5Probe {
 
 type AgentPayload = ReturnType<typeof mt5AgentPayloadSchema.parse>;
 
-const bridgePath = fileURLToPath(
+const bridgePath = process.env.ARISE_MT5_BRIDGE_PATH?.trim() || fileURLToPath(
   new URL('../python/mt5_bridge.py', import.meta.url),
 );
 

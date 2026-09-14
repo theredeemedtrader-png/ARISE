@@ -10,13 +10,18 @@ import { registerIpcHandlers } from './ipc';
 describe('Main-process IPC validation', () => {
   const insert = vi.fn();
   const list = vi.fn();
+  const productInfo = {
+    version: '1.0.0-beta.1', buildCommit: 'abcdef0', buildDate: '2026-09-14T00:00:00.000Z',
+    databaseSchemaVersion: 11, mt5ProtocolVersion: 3, dataDirectory: 'C:\\ARISE\\data',
+    logsDirectory: 'C:\\ARISE\\logs', databasePath: 'C:\\ARISE\\data\\arise.db', packaged: true,
+  } as const;
   beforeEach(() => {
     handlers.clear();
     vi.clearAllMocks();
-    registerIpcHandlers({ ideaRepository: { insert, list } as unknown as IdeaRepository, version: '0.0.1' });
+    registerIpcHandlers({ ideaRepository: { insert, list } as unknown as IdeaRepository, ...productInfo });
   });
   it('returns validated app status', () => {
-    expect(handlers.get(ipcChannels.getAppInfo)!()).toEqual({ name: 'ARISE', version: '0.0.1', databaseReady: true });
+    expect(handlers.get(ipcChannels.getAppInfo)!()).toEqual({ name: 'ARISE', ...productInfo, databaseReady: true });
   });
   it('rejects invalid input before persistence', async () => {
     await expect(handlers.get(ipcChannels.createIdea)!({}, { instrumentId: 'EURUSD', timeframe: 'W', direction: 'BULL' })).rejects.toThrow();
@@ -41,7 +46,7 @@ describe('Main-process IPC validation', () => {
       reviewWorkspace: () => ({ reviews: [{ id:'review-1',sourceType:'TRADE',sourceId:'trade-1',title:'Review',ideaVersion:{id:'idea-v1'},strategyMapVersion:null,currentDissection:{id:'d1'},dissectionVersions:[{id:'d1'}],evidence:[{id:'evidence-1',integrity:'UNVERIFIED_ASSET',event:{id:'evidence-1'},snapshots:[{id:'snapshot-1',imagePath:'missing.png',imageHash:'a'.repeat(64),captureOrigin:'AUTOMATIC',capturedAt:'2026-09-12T00:00:00.000Z'}]}],createdAt:'2026-09-12T00:00:00.000Z' }],lessons:[],proposals:[] }),
     } as unknown as AnalyticsReviewRepository;
     const evidenceCapture = { assets: { verify: vi.fn().mockResolvedValue('CORRUPT') } } as unknown as EvidenceCaptureCoordinator;
-    registerIpcHandlers({ ideaRepository: { insert, list } as unknown as IdeaRepository, analyticsReviewRepository, evidenceCapture, version:'0.0.1' });
+    registerIpcHandlers({ ideaRepository: { insert, list } as unknown as IdeaRepository, analyticsReviewRepository, evidenceCapture, ...productInfo });
     const workspace = await handlers.get(ipcChannels.getPerformanceReviewWorkspace)!();
     expect(workspace).toMatchObject({ reviews:[{ evidence:[{ integrity:'CORRUPT' }] }] });
   });

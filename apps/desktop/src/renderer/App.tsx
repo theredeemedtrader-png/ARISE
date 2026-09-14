@@ -264,7 +264,16 @@ function SystemHealthPage({ info, mt5, reconcile }: { readonly info: AppInfo | n
     ['Economic Calendar', 'NOT CONFIGURED', 'idle'],
     ['Automation', 'BLOCKED', 'idle'],
   ] as const;
-  return <div className="page-stack"><PageHeader eyebrow="UTILITY · READ ONLY" title="System Health" subtitle="Uncertainty is visible. ARISE does not infer that an unavailable subsystem is healthy." action={<button className="primary-button" onClick={reconcile}>RECONCILE NOW</button>}/><section className="panel health-page"><div className="health-summary"><div className="health-ring"><StatusDot state={mt5.connection.truth==='VERIFIED'?'good':'warning'}/></div><div><span>{mt5.connection.transportMode??'LOCAL AGENT'}</span><strong>{mt5.connection.truth==='VERIFIED'?'BROKER REALITY VERIFIED':'RECOVERY REQUIRED'}</strong><small>{mt5.connection.detail} Execution is unavailable.</small></div></div><div className="system-table">{systems.map(([name,state,tone])=><div key={name}><span>{name}</span><b><StatusDot state={tone as 'good'|'idle'|'warning'}/>{state}</b></div>)}</div><div className="reconciliation-panel"><strong>Last reconciliation: {mt5.reconciliation.status}</strong>{mt5.reconciliation.discrepancies.map(item=><span key={`${item.category}-${item.entityKey}`}>{item.category} · {item.entityType} {item.entityKey} · {item.detail}</span>)}</div></section></div>;
+  const product = [
+    ['Application', info ? `${info.name} ${info.version}` : 'STARTING'],
+    ['Build', info ? `${info.buildCommit} · ${info.buildDate}` : 'STARTING'],
+    ['Database schema', info ? String(info.databaseSchemaVersion) : '—'],
+    ['MT5 protocol', info ? String(info.mt5ProtocolVersion) : '—'],
+    ['Runtime', info?.packaged ? 'PACKAGED WINDOWS APP' : 'DEVELOPMENT'],
+    ['Data directory', info?.dataDirectory ?? '—'],
+    ['Logs directory', info?.logsDirectory ?? '—'],
+  ] as const;
+  return <div className="page-stack"><PageHeader eyebrow="UTILITY · READ ONLY" title="System Health" subtitle="Uncertainty is visible. ARISE does not infer that an unavailable subsystem is healthy." action={<button className="primary-button" onClick={reconcile}>RECONCILE NOW</button>}/><section className="panel health-page"><div className="product-identity"><img src="./arise-wordmark.svg" alt="ARISE Trading Systems"/></div><div className="health-summary"><div className="health-ring"><StatusDot state={mt5.connection.truth==='VERIFIED'?'good':'warning'}/></div><div><span>{mt5.connection.transportMode??'LOCAL AGENT'}</span><strong>{mt5.connection.truth==='VERIFIED'?'BROKER REALITY VERIFIED':'RECOVERY REQUIRED'}</strong><small>{mt5.connection.detail} Execution is unavailable.</small></div></div><div className="system-table">{systems.map(([name,state,tone])=><div key={name}><span>{name}</span><b><StatusDot state={tone as 'good'|'idle'|'warning'}/>{state}</b></div>)}</div><div className="product-details">{product.map(([name,value])=><div key={name}><span>{name}</span><b title={value}>{value}</b></div>)}</div><div className="reconciliation-panel"><strong>Last reconciliation: {mt5.reconciliation.status}</strong>{mt5.reconciliation.discrepancies.map(item=><span key={`${item.category}-${item.entityKey}`}>{item.category} · {item.entityType} {item.entityKey} · {item.detail}</span>)}</div></section></div>;
 }
 
 function SettingsPage({ preferences, setPreferences }: { readonly preferences: ShellPreferences; readonly setPreferences: (next: ShellPreferences) => void }) {
@@ -413,7 +422,7 @@ export function App() {
   return (
     <div className={`app-shell ${preferences.navigatorOpen ? 'navigator-visible' : 'navigator-hidden'}`}>
       <aside className="sidebar">
-        <button className="brand-button" onClick={() => open('overview')} aria-label="Open Overview"><span className="brand-mark">A</span><span className="brand-word">ARISE</span></button>
+        <button className="brand-button" onClick={() => open('overview')} aria-label="Open Overview"><img className="brand-mark" src="./arise-symbol.svg" alt=""/><span className="brand-word">ARISE</span></button>
         <nav className="primary-nav">
           {groupedNavigation.map(([group, entries]) => <div className="nav-group" key={group}>{group !== 'PRIMARY' ? <span className="nav-label">{group}</span> : null}{entries.map((workspace) => <button key={workspace.id} className={activeId===workspace.id?'active':''} onClick={()=>open(workspace.id)} title={workspace.description}><Icon name={iconByWorkspace[workspace.id]}/><span>{workspace.label}</span></button>)}</div>)}
         </nav>

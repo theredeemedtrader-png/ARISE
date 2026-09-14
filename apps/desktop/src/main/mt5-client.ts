@@ -28,6 +28,8 @@ export class Mt5ReadOnlyClient {
     private readonly endpoint: { host: string; port: number },
     private readonly executionRepository?: ExecutionRepository,
     private readonly protectionRepository?: ProtectionRepository,
+    private readonly appVersion = '0.0.1',
+    private readonly observe: (event: string, detail?: string) => void = () => undefined,
   ) {}
   start(): void {
     this.stopped = false;
@@ -215,10 +217,11 @@ export class Mt5ReadOnlyClient {
     socket.setEncoding('utf8');
     socket.setTimeout(1500);
     socket.once('connect', () => {
+      this.observe('mt5-agent-client-connected', `${this.endpoint.host}:${this.endpoint.port}`);
       socket.setTimeout(0);
       this.send('HELLO', {
         kind: 'HELLO',
-        appVersion: '0.0.1',
+        appVersion: this.appVersion,
         protocolVersion: MT5_PROTOCOL_VERSION,
         minimumCompatibleVersion: MT5_PROTOCOL_VERSION,
       });
@@ -240,6 +243,7 @@ export class Mt5ReadOnlyClient {
     socket.connect(this.endpoint.port, this.endpoint.host);
   }
   private disconnected(detail: string): void {
+    this.observe('mt5-agent-client-disconnected', detail);
     if (this.socket) {
       this.socket.removeAllListeners();
       this.socket.destroy();
@@ -296,6 +300,7 @@ export class Mt5ReadOnlyClient {
       try {
         const envelope = mt5AgentEnvelopeSchema.parse(JSON.parse(line));
         if (envelope.payload.kind === 'HELLO_ACK') {
+          this.observe('mt5-agent-handshake', `${envelope.payload.transportMode} protocol=${envelope.payload.protocolVersion}`);
           if (
             envelope.payload.protocolVersion < MT5_PROTOCOL_VERSION ||
             envelope.payload.minimumCompatibleVersion > MT5_PROTOCOL_VERSION

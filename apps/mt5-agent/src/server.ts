@@ -506,7 +506,7 @@ export class ReadOnlyMt5AgentServer {
           ...common,
           payload: {
             kind: 'HELLO_ACK',
-            agentVersion: '0.0.1',
+            agentVersion: process.env.ARISE_APP_VERSION ?? '0.0.1',
             protocolVersion: MT5_PROTOCOL_VERSION,
             minimumCompatibleVersion: MT5_PROTOCOL_VERSION,
             sessionId,

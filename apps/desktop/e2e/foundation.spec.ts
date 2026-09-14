@@ -20,7 +20,7 @@ test('Electron status, isolated IPC, WAL, and persistence across restart', async
       const require = createRequire(`${mainApp.getAppPath()}/package.json`);
       const databaseRequire = createRequire(require.resolve('@arise/database'));
       const Database = databaseRequire('better-sqlite3');
-      const db = new Database(`${mainApp.getPath('userData')}/arise.db`);
+      const db = new Database(`${mainApp.getPath('userData')}/data/arise.db`);
       try { return db.pragma('journal_mode', { simple: true }); } finally { db.close(); }
     });
     expect(wal).toBe('wal');

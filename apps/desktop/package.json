@@ -1,45 +1,55 @@
 {
   "name": "@arise/desktop",
-  "version": "0.0.1",
+  "version": "1.0.0-beta.1",
+  "description": "ARISE Trading Systems desktop application",
+  "author": "ARISE Trading Systems",
   "private": true,
   "type": "module",
   "main": "dist/main/main.cjs",
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "build": "vite build && node scripts/build.mjs",
+    "assets": "node scripts/build-assets.mjs",
+    "build": "pnpm assets && vite build && node scripts/build.mjs",
+    "package:win": "pnpm build && pnpm native:electron && node scripts/build-python-runtime.mjs && electron-builder --config electron-builder.yml --win nsis --x64",
+    "package:dir": "pnpm build && pnpm native:electron && node scripts/build-python-runtime.mjs && electron-builder --config electron-builder.yml --win dir --x64",
+    "smoke:packaged": "node scripts/smoke-packaged.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json && tsc -p tsconfig.test.json",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint .",
     "start": "pnpm native:electron && electron .",
     "native:electron": "electron-rebuild -f -w better-sqlite3",
     "native:node": "pnpm --filter @arise/database rebuild better-sqlite3",
-    "test:e2e": "pnpm build && pnpm native:electron && playwright test"
+    "test:e2e": "pnpm build && pnpm native:electron && node scripts/run-e2e.mjs"
   },
   "dependencies": {
-    "better-sqlite3": "^12.2.0",
-    "@arise/domain": "workspace:*",
+    "@arise/calendar": "workspace:*",
+    "@arise/charting": "workspace:*",
     "@arise/database": "workspace:*",
+    "@arise/documents": "workspace:*",
+    "@arise/domain": "workspace:*",
+    "@arise/evidence": "workspace:*",
+    "@arise/execution": "workspace:*",
     "@arise/shared": "workspace:*",
-    "@vitejs/plugin-react": "^5.0.2",
-    "electron": "^37.3.1",
+    "@arise/strategy-engine": "workspace:*",
+    "better-sqlite3": "^12.2.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "vite": "^7.1.4",
-    "@arise/charting": "workspace:*",
-    "@arise/documents": "workspace:*",
-    "@arise/calendar": "workspace:*",
-    "@arise/strategy-engine": "workspace:*",
-    "@arise/evidence": "workspace:*"
-    ,"@arise/execution": "workspace:*"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@arise/mt5-agent": "workspace:*",
+    "@electron/rebuild": "^4.0.1",
+    "@playwright/test": "^1.55.0",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
-    "typescript": "^5.9.2",
-    "vitest": "^3.2.4",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^37.10.3",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.25.9",
-    "@electron/rebuild": "^4.0.1",
-    "@playwright/test": "^1.55.0"
+    "png-to-ico": "^3.0.2",
+    "sharp": "^0.35.4",
+    "typescript": "^5.9.2",
+    "vite": "^7.3.6",
+    "vitest": "^3.2.4"
   }
 }

@@ -1,0 +1,37 @@
+appId: com.arisetradingsystems.arise
+productName: ARISE
+copyright: Copyright © 2026 ARISE Trading Systems
+directories:
+  output: ../../release/windows
+  buildResources: build/generated
+files:
+  - dist/**/*
+  - package.json
+asar: true
+asarUnpack:
+  - node_modules/better-sqlite3/**/*
+extraResources:
+  - from: build/generated/arise-symbol-256.png
+    to: assets/arise-symbol-256.png
+  - from: ../mt5-agent/python/mt5_bridge.py
+    to: mt5/mt5_bridge.py
+  - from: build/python
+    to: python
+win:
+  icon: build/generated/arise.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ARISE-Setup-${version}.${ext}
+  verifyUpdateCodeSignature: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ARISE
+  uninstallDisplayName: ARISE
+  deleteAppDataOnUninstall: false
+publish: null

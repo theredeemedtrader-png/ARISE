@@ -53,7 +53,7 @@ svg { width: 18px; height: 18px; }
 .app-shell.navigator-hidden { grid-template-columns: 212px minmax(720px, 1fr); }
 .sidebar { min-width: 0; background: linear-gradient(180deg, var(--surface-0), #09111b); border-right: 1px solid var(--border); padding: 16px 12px 13px; display: flex; flex-direction: column; overflow: hidden; }
 .brand-button { height: 48px; border: 0; background: transparent; display: flex; align-items: center; gap: 11px; padding: 0 10px; cursor: pointer; }
-.brand-mark { position: relative; font-size: 0; width: 28px; height: 30px; display: inline-block; clip-path: polygon(50% 0, 100% 100%, 72% 100%, 50% 56%, 27% 100%, 0 100%); background: linear-gradient(135deg, #55b0ff, #248bf0 70%); filter: drop-shadow(0 0 9px rgba(36,139,240,.2)); }
+.brand-mark { width: 28px; height: 30px; display: block; object-fit: contain; filter: drop-shadow(0 0 9px rgba(67,116,186,.24)); }
 .brand-word { color: var(--text); letter-spacing: .19em; font-size: 19px; font-weight: 630; }
 .primary-nav { margin-top: 17px; display: grid; gap: 2px; overflow: auto; scrollbar-width: none; }
 .primary-nav::-webkit-scrollbar { display: none; }
@@ -243,6 +243,12 @@ kbd { margin-left: auto; color: var(--faint); border: 1px solid var(--border); b
 .chart-panel svg path { fill:none; stroke:var(--blue); stroke-width:2; vector-effect:non-scaling-stroke; }
 .big-placeholder { font-size:42px; display:block; margin-top:50px; color:var(--text); }
 .health-page { max-width:860px; }
+.product-identity { min-height:76px;display:flex;align-items:center;justify-content:center;margin:-3px -3px 12px;padding:14px;border:1px solid var(--border);border-radius:7px;background:#0a1521; }
+.product-identity img { width:min(360px,70%);height:48px;object-fit:contain; }
+.product-details { margin-top:12px;border-top:1px solid var(--border); }
+.product-details div { min-height:38px;display:grid;grid-template-columns:140px minmax(0,1fr);align-items:center;border-bottom:1px solid var(--border);gap:12px; }
+.product-details span { color:var(--muted);font-size:9px; }
+.product-details b { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;text-align:right; }
 .health-summary { min-height:105px; display:flex; align-items:center; gap:17px; border-bottom:1px solid var(--border); }
 .health-ring { width:48px;height:48px;border-radius:50%;border:1px solid var(--border-strong);display:grid;place-items:center;background:var(--surface-0); }
 .health-ring .status-dot { width:10px;height:10px; }

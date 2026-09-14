@@ -244,8 +244,28 @@ export function registerIpcHandlers(params: {
   protectionGateway?:ProtectionGateway;
   analyticsReviewRepository?:AnalyticsReviewRepository;
   version: string;
+  buildCommit: string;
+  buildDate: string;
+  databaseSchemaVersion: number;
+  mt5ProtocolVersion: number;
+  dataDirectory: string;
+  logsDirectory: string;
+  databasePath: string;
+  packaged: boolean;
 }) {
-  ipcMain.handle(ipcChannels.getAppInfo, () => appInfoSchema.parse({ name: 'ARISE', version: params.version, databaseReady: true }));
+  ipcMain.handle(ipcChannels.getAppInfo, () => appInfoSchema.parse({
+    name: 'ARISE',
+    version: params.version,
+    buildCommit: params.buildCommit,
+    buildDate: params.buildDate,
+    databaseSchemaVersion: params.databaseSchemaVersion,
+    mt5ProtocolVersion: params.mt5ProtocolVersion,
+    dataDirectory: params.dataDirectory,
+    logsDirectory: params.logsDirectory,
+    databasePath: params.databasePath,
+    packaged: params.packaged,
+    databaseReady: true,
+  }));
   if (params.mt5Repository && params.mt5Client) {
     ipcMain.handle(ipcChannels.getMt5Workspace, () => mt5WorkspaceSchema.parse(params.mt5Repository!.workspace()));
     ipcMain.handle(ipcChannels.classifyExternalPosition, (_event, rawInput) => params.mt5Repository!.classify(classifyExternalPositionInputSchema.parse(rawInput)));

@@ -1,7 +1,7 @@
 {
   "name": "arise",
   "private": true,
-  "version": "0.0.1",
+  "version": "1.0.0-beta.1",
   "packageManager": "pnpm@10.15.0",
   "scripts": {
     "dev": "pnpm --filter @arise/desktop dev",
@@ -12,6 +12,8 @@
     "check": "pnpm --filter @arise/desktop native:node && pnpm typecheck && pnpm lint && pnpm test",
     "db:generate": "pnpm --filter @arise/database db:generate",
     "test:e2e": "pnpm --filter @arise/desktop test:e2e"
+    ,"package:win": "pnpm --filter @arise/desktop package:win"
+    ,"package:dir": "pnpm --filter @arise/desktop package:dir"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

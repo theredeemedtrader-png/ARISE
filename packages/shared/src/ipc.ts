@@ -4,6 +4,14 @@ import { classifyExternalPositionInputSchema, mt5WorkspaceSchema } from './mt5';
 export const appInfoSchema = z.object({
   name: z.literal('ARISE'),
   version: z.string(),
+  buildCommit: z.string(),
+  buildDate: z.string(),
+  databaseSchemaVersion: z.number().int().nonnegative(),
+  mt5ProtocolVersion: z.number().int().positive(),
+  dataDirectory: z.string(),
+  logsDirectory: z.string(),
+  databasePath: z.string(),
+  packaged: z.boolean(),
   databaseReady: z.boolean(),
 });
 export type AppInfo = z.infer<typeof appInfoSchema>;
