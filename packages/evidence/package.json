@@ -1,0 +1,14 @@
+{
+  "name": "@arise/evidence",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "echo evidence:lint"
+  },
+  "devDependencies": { "vitest": "^3.2.4" }
+}

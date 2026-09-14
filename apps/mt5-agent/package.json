@@ -1,0 +1,18 @@
+{
+  "name": "@arise/mt5-agent",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:python": "python -m unittest discover -s python -p test_*.py",
+    "start": "tsx src/main.ts",
+    "test:real-mt5": "tsx src/real-acceptance.ts",
+    "test:real-mt5:rejections": "tsx src/real-rejection-acceptance.ts"
+  },
+  "dependencies": { "@arise/shared": "workspace:*" },
+  "devDependencies": { "tsx": "^4.20.5", "vitest": "^3.2.4" }
+}

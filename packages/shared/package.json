@@ -1,0 +1,16 @@
+{
+  "name": "@arise/shared",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "echo shared:lint"
+  },
+  "dependencies": {
+    "zod": "^4.1.5"
+  }
+}

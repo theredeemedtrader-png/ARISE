@@ -1,0 +1,31 @@
+{
+  "name": "@arise/database",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "echo database:lint",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@arise/domain": "workspace:*",
+    "better-sqlite3": "^12.2.0",
+    "drizzle-orm": "^0.44.5",
+    "@arise/documents": "workspace:*",
+    "@arise/calendar": "workspace:*",
+    "@arise/strategy-engine": "workspace:*",
+    "@arise/evidence": "workspace:*",
+    "@arise/shared": "workspace:*"
+    ,"@arise/execution": "workspace:*"
+    ,"@arise/analytics": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "drizzle-kit": "^0.31.4",
+    "vitest": "^3.2.4"
+  }
+}
