@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_2" data-name="Layer 2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 261.9 93.56">
+  <defs>
+    <style>
+      .cls-1 {
+        font-size: 50.13px;
+        letter-spacing: .1em;
+      }
+
+      .cls-1, .cls-2 {
+        fill: #fff;
+      }
+
+      .cls-1, .cls-3 {
+        font-family: Avenir-Heavy, Avenir;
+        font-weight: 800;
+      }
+
+      .cls-4 {
+        fill: #4374ba;
+      }
+
+      .cls-3 {
+        fill: #4479bd;
+        font-size: 14.17px;
+        letter-spacing: .13em;
+      }
+    </style>
+  </defs>
+  <g id="Layer_3" data-name="Layer 3">
+    <g>
+      <polygon class="cls-4" points="0 86.79 18.23 86.79 45.89 34.82 73.17 86.79 91.65 86.79 45.76 0 0 86.79"/>
+      <g>
+        <polygon class="cls-2" points="98.89 62.61 106.54 62.61 118.14 40.82 129.58 62.61 137.33 62.61 118.08 26.21 98.89 62.61"/>
+        <text class="cls-1" transform="translate(141.94 62.61)"><tspan x="0" y="0">RISE</tspan></text>
+      </g>
+      <text class="cls-3" transform="translate(104.3 86.79)"><tspan x="0" y="0">TRADING SYSTEMS</tspan></text>
+    </g>
+  </g>
+</svg>
