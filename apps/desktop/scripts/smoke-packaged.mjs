@@ -9,7 +9,7 @@ const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const repositoryRoot = path.resolve(desktopRoot, '../..');
 const executablePath = process.env.ARISE_PACKAGED_EXE?.trim()
   || path.join(repositoryRoot, 'release', 'windows', 'win-unpacked', 'ARISE.exe');
-const expectedVersion = process.env.ARISE_EXPECT_VERSION?.trim() || '1.0.0-beta.1';
+const expectedVersion = process.env.ARISE_EXPECT_VERSION?.trim() || '1.0.0-beta.2';
 if (!existsSync(executablePath)) throw new Error(`Packaged executable not found: ${executablePath}`);
 
 const userData = process.env.ARISE_SMOKE_USER_DATA?.trim()
