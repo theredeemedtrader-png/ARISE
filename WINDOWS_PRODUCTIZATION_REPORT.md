@@ -1,8 +1,11 @@
 # ARISE Windows Productization Phase 1 Report
 
-**Status:** PASSED  
-**Validated:** 2026-09-14 on Windows x64  
-**Branch:** `product/windows-packaging`  
+**Status:** PASSED
+
+**Validated:** 2026-09-14 on Windows x64
+
+**Branch:** `product/windows-packaging`
+
 **Product version:** `1.0.0-beta.1`
 
 ## Scope and frozen baseline
