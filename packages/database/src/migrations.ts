@@ -1041,6 +1041,28 @@ END;
 ${['position_performance_events','review_dissection_versions','review_evidence_links','lesson_versions','lesson_evidence','review_lesson_links','strategy_change_proposal_events'].map(immutableTriggers).join('\n')}
 `;
 
+const strategyPackageSchema = `
+CREATE TABLE strategy_package_imports (
+  id TEXT PRIMARY KEY,
+  package_id TEXT NOT NULL,
+  package_type TEXT NOT NULL CHECK(package_type IN ('STRATEGY','COMBO','TEMPLATE')),
+  package_version TEXT NOT NULL,
+  checksum TEXT NOT NULL CHECK(length(checksum)=64),
+  imported_at TEXT NOT NULL,
+  source_json TEXT NOT NULL,
+  originating_filename TEXT NOT NULL,
+  definition_id TEXT REFERENCES strategy_definitions(id),
+  definition_version_id TEXT REFERENCES strategy_versions(id),
+  map_id TEXT REFERENCES strategy_maps(id),
+  map_version_id TEXT REFERENCES strategy_map_versions(id),
+  dependency_state_json TEXT NOT NULL,
+  manifest_json TEXT NOT NULL,
+  UNIQUE(package_id,package_version)
+);
+CREATE INDEX strategy_package_imports_package_id_idx ON strategy_package_imports(package_id);
+${immutableTriggers('strategy_package_imports')}
+`;
+
 // Keep the original M0 table intact as migration v1, then move it aside in M2.
 export const migrations: readonly Migration[] = [
   {
@@ -1064,6 +1086,7 @@ export const migrations: readonly Migration[] = [
   { version: 9, sql: m10AuditSchema },
   { version: 10, sql: m11Schema },
   { version: 11, sql: m12Schema },
+  { version: 12, sql: strategyPackageSchema },
 ];
 
 export function applyMigrations(sqlite: Database.Database, steps: readonly Migration[] = migrations): void {

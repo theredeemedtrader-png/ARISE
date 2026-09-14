@@ -19,7 +19,7 @@ function tableNames(sqlite: Database.Database): string[] {
 }
 
 describe('versioned persistence migrations', () => {
-  it('uses WAL, foreign keys, M12 schema, and preserves frozen-M0 Ideas after reopening', async () => {
+  it('uses WAL, foreign keys, Strategy Package schema, and preserves frozen-M0 Ideas after reopening', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'arise-m2-'));
     const filename = path.join(dir, 'arise.db');
     let connection = openDatabase(filename);
@@ -31,7 +31,7 @@ describe('versioned persistence migrations', () => {
         1,
       );
       expect(connection.sqlite.pragma('user_version', { simple: true })).toBe(
-        11,
+        12,
       );
       const idea = createDraftIdea({
         id: 'restart',
@@ -62,7 +62,7 @@ describe('versioned persistence migrations', () => {
         "INSERT INTO ideas VALUES ('old', 'EURUSD', 'W', 'LONG', 'DRAFT', 123)",
       );
       applyMigrations(sqlite);
-      expect(sqlite.pragma('user_version', { simple: true })).toBe(11);
+      expect(sqlite.pragma('user_version', { simple: true })).toBe(12);
       expect(
         sqlite.prepare('SELECT id, instrument_id FROM legacy_ideas').all(),
       ).toEqual([{ id: 'old', instrument_id: 'EURUSD' }]);
@@ -72,7 +72,7 @@ describe('versioned persistence migrations', () => {
     }
   });
 
-  it('adopts the unversioned starter schema and then upgrades it through M12', () => {
+  it('adopts the unversioned starter schema and then upgrades it through Strategy Packages', () => {
     const sqlite = new Database(':memory:');
     try {
       sqlite.exec(migrations[0]!.sql);
@@ -81,13 +81,14 @@ describe('versioned persistence migrations', () => {
       );
       applyMigrations(sqlite);
       applyMigrations(sqlite);
-      expect(sqlite.pragma('user_version', { simple: true })).toBe(11);
+      expect(sqlite.pragma('user_version', { simple: true })).toBe(12);
       expect(sqlite.prepare('SELECT id FROM legacy_ideas').all()).toEqual([
         { id: 'old' },
       ]);
       expect(tableNames(sqlite)).toContain('market_object_versions');
       expect(tableNames(sqlite)).toContain('positions');
       expect(tableNames(sqlite)).toContain('performance_reviews');
+      expect(tableNames(sqlite)).toContain('strategy_package_imports');
     } finally {
       sqlite.close();
     }

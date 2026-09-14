@@ -1,5 +1,6 @@
 import {
   integer,
+  index,
   real,
   sqliteTable,
   text,
@@ -639,6 +640,30 @@ export const strategyMapVersions = sqliteTable(
       table.strategyMapId,
       table.versionNo,
     ),
+  ],
+);
+
+export const strategyPackageImports = sqliteTable(
+  'strategy_package_imports',
+  {
+    id: text('id').primaryKey(),
+    packageId: text('package_id').notNull(),
+    packageType: text('package_type', { enum: ['STRATEGY', 'COMBO', 'TEMPLATE'] }).notNull(),
+    packageVersion: text('package_version').notNull(),
+    checksum: text('checksum').notNull(),
+    importedAt: text('imported_at').notNull(),
+    sourceJson: text('source_json').notNull(),
+    originatingFilename: text('originating_filename').notNull(),
+    definitionId: text('definition_id'),
+    definitionVersionId: text('definition_version_id'),
+    mapId: text('map_id'),
+    mapVersionId: text('map_version_id'),
+    dependencyStateJson: text('dependency_state_json').notNull(),
+    manifestJson: text('manifest_json').notNull(),
+  },
+  (table) => [
+    uniqueIndex('strategy_package_imports_identity_version_uq').on(table.packageId, table.packageVersion),
+    index('strategy_package_imports_package_id_idx').on(table.packageId),
   ],
 );
 

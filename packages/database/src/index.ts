@@ -13,6 +13,7 @@ export * from './document-repository';
 export * from './review-repository';
 export * from './planning-repository';
 export * from './strategy-repository';
+export * from './strategy-package-repository';
 export * from './runtime-repository';
 export * from './evidence-repository';
 export * from './mt5-repository';
