@@ -2,11 +2,13 @@
 
 **Updated:** 2026-09-14  
 **Frozen milestones:** M0–M13  
-**Current gate:** Windows Productization Phase 1 — PASSED on `product/windows-packaging`
+**Current gate:** Strategy Package System Phase 1 — PASSED on `feature/strategy-packages`
 
 ## Status
 
-The roadmap, post-roadmap real MT5 demo-terminal gate, and Windows Productization Phase 1 are complete. M0–M13 remain frozen. Do not begin Productization Phase 2, Strategy Package work, or LIVE enablement without a new explicit milestone. Phase 1 is isolated on `product/windows-packaging` and is not merged or tagged.
+The roadmap, post-roadmap real MT5 demo-terminal gate, Windows Productization Phase 1, and Strategy Package System Phase 1 are complete. M0–M13 remain frozen. Do not begin Strategy Package Phase 2, arbitrary detector/plugin execution, Productization Phase 2, or LIVE enablement without a new explicit milestone. Strategy Package Phase 1 is isolated on `feature/strategy-packages`; it is not merged or tagged.
+
+ARISE `1.0.0-beta.2` now imports externally authored, checksummed, data-only `.arise-strategy`, `.arise-combo`, and `.arise-template` files through a preview-first installed-app workflow. Imports resolve only trusted built-in capabilities, create immutable Strategy/Map/provenance versions, default to OBSERVE/`EXPERIMENTAL`, export losslessly, reject `LIVE`, and never grant broker authority. Installed NSIS acceptance, restart persistence, export/re-import, OBSERVE behavior, zero broker-command verification, and beta.1 data retention passed. See `STRATEGY_PACKAGE_PHASE1_REPORT.md` and `docs/STRATEGY_PACKAGE_SPEC.md`.
 
 ARISE `1.0.0-beta.1` now builds as a per-user NSIS Windows installer with official brand assets, stable `%LOCALAPPDATA%\ARISE` data paths, startup database backups, production diagnostics, and a packaged local Agent/private Python bridge. Installed-app, upgrade/data-retention, uninstall-retention, icon, renderer-isolation, and Eightcap-Demo read-only recognition checks passed. See `WINDOWS_PRODUCTIZATION_REPORT.md`.
 
@@ -23,7 +25,7 @@ Three narrow compatibility fixes are recorded in `REAL_MT5_DEMO_ACCEPTANCE_REPOR
 - MT5 build `6182`; `Eightcap-Demo`; `ACCOUNT_TRADE_MODE_DEMO`
 - Algo Trading enabled; `MT5_DEMO` protocol v3
 - `EURUSD → EURUSD.i`; minimum/step `0.01 / 0.01`
-- 627 unit/integration tests, build, and 13 standard Electron journeys: PASS
+- 659 unit/integration tests, build, and 14 standard Electron journeys: PASS
 - Real runtime, recovery/partial-close, management, Colony, and rejection journeys: PASS
 - Python bridge: 12 tests PASS
 - Node ABI restored and database recovery tests PASS
@@ -33,4 +35,4 @@ See `REAL_MT5_DEMO_ACCEPTANCE_REPORT.md` for exact results and explicit `NOT REP
 
 Current recommendation:
 
-WINDOWS PRODUCTIZATION PHASE 1: PASSED
+STRATEGY PACKAGE SYSTEM PHASE 1: PASSED
