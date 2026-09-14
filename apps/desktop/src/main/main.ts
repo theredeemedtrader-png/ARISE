@@ -16,6 +16,7 @@ import {
   TimeframeRepository,
   openDatabase,
   AnalyticsReviewRepository,
+  StrategyPackageRepository,
 } from '@arise/database';
 import { MT5_PROTOCOL_VERSION } from '@arise/shared';
 import { EvidenceAssetStore } from '@arise/evidence';
@@ -114,6 +115,7 @@ app.whenReady().then(async () => {
     documentRepository: new DocumentRepository(connection.db),
     reviewRepository: new ReviewRepository(connection.db),
     strategyRepository: new StrategyRepository(connection.db),
+    strategyPackageRepository: new StrategyPackageRepository(connection.db, app.getVersion()),
     runtimeRepository: new RuntimeRepository(connection.db),
     evidenceRepository,
     evidenceCapture,

@@ -221,6 +221,25 @@ export const createStrategyDefinitionInputSchema = z.object({
 export const reviseStrategyDefinitionInputSchema = createStrategyDefinitionInputSchema.extend({ definitionId: z.string().min(1) });
 export const createStrategyMapInputSchema = z.object({ name: z.string().trim().min(1), kind: strategyMapKindSchema, graph: strategyGraphSchema });
 export const saveStrategyMapInputSchema = z.object({ mapId: z.string().min(1), graph: strategyGraphSchema });
+export const strategyPackageDependencyViewSchema = z.object({
+  kind:z.enum(['DETECTOR','STRATEGY','COMBO','CAPABILITY']), id:z.string(), versionRange:z.string(), installedVersion:z.string().nullable(), required:z.boolean(),
+  status:z.enum(['SATISFIED','MISSING','INCOMPATIBLE_VERSION','UNSUPPORTED_CAPABILITY','CIRCULAR_DEPENDENCY']),
+});
+export const strategyPackagePreviewSchema = z.object({
+  valid:z.boolean(), filename:z.string(), packageId:z.string().nullable(), packageType:z.enum(['STRATEGY','COMBO','TEMPLATE']).nullable(),
+  name:z.string().nullable(), description:z.string().nullable(), version:z.string().nullable(), author:z.string().nullable(), source:z.string().nullable(),
+  checksum:z.string().nullable(), integrity:z.enum(['VERIFIED','FAILED','UNKNOWN']), disposition:z.enum(['NEW','IDENTICAL','UPGRADE','OLDER','CONFLICT']).nullable(),
+  dependencies:z.array(strategyPackageDependencyViewSchema), parameters:z.array(z.object({key:z.string(),label:z.string(),description:z.string(),type:z.string(),defaultValue:z.unknown(),minimum:z.number().nullable(),maximum:z.number().nullable(),allowedValues:z.array(z.union([z.string(),z.number(),z.boolean()])),required:z.boolean(),unit:z.string().nullable(),scope:z.enum(['INHERITED','LOCAL']),access:z.enum(['USER_EDITABLE','READ_ONLY'])})),
+  graphSummary:z.object({nodes:z.number().int().nonnegative(),edges:z.number().int().nonnegative(),actions:z.array(z.string())}),
+  timeframeMappings:z.array(z.object({timeframe:z.string(),purposes:z.array(timeframePurposeSchema),importance:stageImportanceSchema,mode:z.enum(['MANUAL','CONFIRMATION','AUTOMATED','IGNORED'])})),
+  evidencePolicy:z.object({profile:z.enum(['ENTRY_ONLY','STRATEGY_EVIDENCE_AND_ENTRY','STRATEGY_EVIDENCE_ONLY','CUSTOM']),events:z.array(z.string()),references:z.array(z.string())}).nullable(),
+  deploymentModes:z.array(z.enum(['OBSERVE','SHADOW','DEMO'])), preferredImportMode:z.literal('OBSERVE'), warnings:z.array(z.string()), errors:z.array(z.string()),
+});
+export const selectStrategyPackageResultSchema = z.object({previewToken:z.string(),preview:strategyPackagePreviewSchema}).nullable();
+export const importStrategyPackageInputSchema = z.object({previewToken:z.string().min(1),expectedChecksum:z.string().regex(/^[a-f0-9]{64}$/),allowUpgrade:z.boolean().default(false)});
+export const importStrategyPackageResultSchema = z.object({status:z.enum(['IMPORTED','ALREADY_IMPORTED']),packageId:z.string(),packageType:z.enum(['STRATEGY','COMBO','TEMPLATE']),packageVersion:z.string(),checksum:z.string(),definitionId:z.string().nullable(),definitionVersionId:z.string().nullable(),mapId:z.string().nullable(),mapVersionId:z.string().nullable()});
+export const exportStrategyPackageInputSchema = z.object({targetType:z.enum(['STRATEGY','MAP']),targetId:z.string().min(1)});
+export const exportStrategyPackageResultSchema = z.object({canceled:z.boolean(),filePath:z.string().nullable(),checksum:z.string().nullable()});
 export const createStrategyRuntimeInputSchema = z.object({ mapId:z.string().min(1), colonyId:z.string().min(1), mode:z.enum(['OBSERVE','SHADOW','DEMO']) });
 export const simulateStrategyRuntimeEventInputSchema = z.object({
   runtimeId:z.string().min(1), eventType:runtimeEventTypeSchema, timeframe:z.string().nullable().default(null), price:z.number().finite().nullable().default(null), spreadPips:z.number().nonnegative().nullable().default(null), pipSize:z.number().positive().default(0.0001),
@@ -352,6 +371,9 @@ export const ipcChannels = {
   reviseStrategyDefinition: 'arise:revise-strategy-definition',
   createStrategyMap: 'arise:create-strategy-map',
   saveStrategyMap: 'arise:save-strategy-map',
+  selectStrategyPackage: 'arise:select-strategy-package',
+  importStrategyPackage: 'arise:import-strategy-package',
+  exportStrategyPackage: 'arise:export-strategy-package',
   createStrategyRuntime: 'arise:create-strategy-runtime',
   simulateStrategyRuntimeEvent: 'arise:simulate-strategy-runtime-event',
   manualStrategyRuntimeDecision: 'arise:manual-strategy-runtime-decision',
@@ -407,6 +429,9 @@ export interface AriseApi {
   reviseStrategyDefinition(input: z.infer<typeof reviseStrategyDefinitionInputSchema>): Promise<z.infer<typeof strategyDefinitionViewSchema>>;
   createStrategyMap(input: z.infer<typeof createStrategyMapInputSchema>): Promise<z.infer<typeof strategyMapViewSchema>>;
   saveStrategyMap(input: z.infer<typeof saveStrategyMapInputSchema>): Promise<z.infer<typeof strategyMapViewSchema>>;
+  selectStrategyPackage(): Promise<z.infer<typeof selectStrategyPackageResultSchema>>;
+  importStrategyPackage(input:z.infer<typeof importStrategyPackageInputSchema>):Promise<z.infer<typeof importStrategyPackageResultSchema>>;
+  exportStrategyPackage(input:z.infer<typeof exportStrategyPackageInputSchema>):Promise<z.infer<typeof exportStrategyPackageResultSchema>>;
   createStrategyRuntime(input: z.infer<typeof createStrategyRuntimeInputSchema>): Promise<z.infer<typeof strategyRuntimeViewSchema>>;
   simulateStrategyRuntimeEvent(input: z.infer<typeof simulateStrategyRuntimeEventInputSchema>): Promise<z.infer<typeof strategyRuntimeViewSchema>>;
   manualStrategyRuntimeDecision(input: z.infer<typeof manualStrategyRuntimeDecisionInputSchema>): Promise<z.infer<typeof strategyRuntimeViewSchema>>;

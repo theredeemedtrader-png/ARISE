@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- M12 immutable JSON snapshots are validated by shared schemas at this IPC boundary. */
-import { ipcMain } from 'electron';
+import { dialog, ipcMain } from 'electron';
 import { randomUUID } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { buildRuntimeEvidencePlans, type EvidenceRecordPlan } from '@arise/evidence';
 import {
   createDraftIdea,
@@ -12,6 +14,7 @@ import {
 } from '@arise/domain';
 import {
   createDefaultDetectorRegistry,
+  extensionForPackageType,
   createRuntime,
   maximumRuntimeMode,
   processRuntimeEvent,
@@ -65,6 +68,7 @@ import {
   Mt5Repository,
   TimeframeRepository,
   AnalyticsReviewRepository,
+  StrategyPackageRepository,
 } from '@arise/database';
 import {
   appInfoSchema,
@@ -101,6 +105,11 @@ import {
   reviseStrategyDefinitionInputSchema,
   createStrategyMapInputSchema,
   saveStrategyMapInputSchema,
+  selectStrategyPackageResultSchema,
+  importStrategyPackageInputSchema,
+  importStrategyPackageResultSchema,
+  exportStrategyPackageInputSchema,
+  exportStrategyPackageResultSchema,
   strategyDefinitionViewSchema,
   strategyMapViewSchema,
   strategyWorkspaceSchema,
@@ -235,6 +244,7 @@ export function registerIpcHandlers(params: {
   documentRepository?: DocumentRepository;
   reviewRepository?: ReviewRepository;
   strategyRepository?: StrategyRepository;
+  strategyPackageRepository?: StrategyPackageRepository;
   runtimeRepository?: RuntimeRepository;
   evidenceRepository?: EvidenceRepository;
   evidenceCapture?: EvidenceCaptureCoordinator;
@@ -614,6 +624,44 @@ export function registerIpcHandlers(params: {
       liveMarketDataAvailable: false,
     });
     ipcMain.handle(ipcChannels.getStrategyWorkspace, workspace);
+    if (params.strategyPackageRepository) {
+      const packageRepository = params.strategyPackageRepository;
+      const previews = new Map<string, { readonly manifest: NonNullable<ReturnType<StrategyPackageRepository['preview']>['manifest']>; readonly filename: string; readonly createdAt: number }>();
+      ipcMain.handle(ipcChannels.selectStrategyPackage, async () => {
+        const selected = await dialog.showOpenDialog({
+          title: 'Import ARISE Strategy Package', properties: ['openFile'],
+          filters: [{ name:'ARISE Strategy Packages', extensions:['arise-strategy','arise-combo','arise-template'] }],
+        });
+        if (selected.canceled || selected.filePaths.length !== 1) return null;
+        const filePath = selected.filePaths[0]!;
+        const source = await readFile(filePath, 'utf8');
+        const result = packageRepository.preview(source, path.basename(filePath));
+        const previewToken = randomUUID();
+        if (result.manifest) previews.set(previewToken, { manifest:result.manifest, filename:path.basename(filePath), createdAt:Date.now() });
+        for (const [token, value] of previews) if (Date.now()-value.createdAt > 10*60*1000 || previews.size > 10) previews.delete(token);
+        return selectStrategyPackageResultSchema.parse({previewToken,preview:result.preview});
+      });
+      ipcMain.handle(ipcChannels.importStrategyPackage, (_event, rawInput) => {
+        const input=importStrategyPackageInputSchema.parse(rawInput);
+        const selected=previews.get(input.previewToken);
+        if(!selected)throw new Error('Import preview expired; select the package again');
+        const result=packageRepository.importValidated(selected.manifest,selected.filename,input.expectedChecksum,input.allowUpgrade);
+        previews.delete(input.previewToken);
+        return importStrategyPackageResultSchema.parse(result);
+      });
+      ipcMain.handle(ipcChannels.exportStrategyPackage, async (_event,rawInput)=>{
+        const input=exportStrategyPackageInputSchema.parse(rawInput);
+        const manifest=input.targetType==='STRATEGY'?packageRepository.exportDefinition(input.targetId):packageRepository.exportMap(input.targetId);
+        const suggested=`${manifest.name.replace(/[^A-Za-z0-9._-]+/g,'-').replace(/^-+|-+$/g,'')||manifest.packageId}${extensionForPackageType(manifest.packageType)}`;
+        const selected=await dialog.showSaveDialog({title:'Export ARISE Strategy Package',defaultPath:suggested,filters:[{name:'ARISE Strategy Package',extensions:[extensionForPackageType(manifest.packageType).slice(1)]}]});
+        if(selected.canceled||!selected.filePath)return exportStrategyPackageResultSchema.parse({canceled:true,filePath:null,checksum:null});
+        await writeFile(selected.filePath,`${JSON.stringify(manifest,null,2)}\n`,{encoding:'utf8',flag:'wx'}).catch(async(error:unknown)=>{
+          const code=(error as NodeJS.ErrnoException).code;if(code!=='EEXIST')throw error;
+          throw new Error('Export destination already exists; choose a new filename to avoid silent overwrite');
+        });
+        return exportStrategyPackageResultSchema.parse({canceled:false,filePath:selected.filePath,checksum:manifest.integrity.checksum});
+      });
+    }
     ipcMain.handle(ipcChannels.createStrategyDefinition, (_event, rawInput) => {
       const input = createStrategyDefinitionInputSchema.parse(rawInput);
       const now = new Date().toISOString();

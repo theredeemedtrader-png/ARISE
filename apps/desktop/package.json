@@ -1,6 +1,6 @@
 {
   "name": "@arise/desktop",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "ARISE Trading Systems desktop application",
   "author": "ARISE Trading Systems",
   "private": true,
@@ -13,6 +13,7 @@
     "package:win": "pnpm build && pnpm native:electron && node scripts/build-python-runtime.mjs && electron-builder --config electron-builder.yml --win nsis --x64",
     "package:dir": "pnpm build && pnpm native:electron && node scripts/build-python-runtime.mjs && electron-builder --config electron-builder.yml --win dir --x64",
     "smoke:packaged": "node scripts/smoke-packaged.mjs",
+    "smoke:strategy-package": "node scripts/smoke-strategy-package.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json && tsc -p tsconfig.test.json",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint .",
