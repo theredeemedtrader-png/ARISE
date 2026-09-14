@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import {
   AriseChartController,
   CHART_TIMEFRAMES,
+  createDemoCandles,
   decodeDrawingGeometry,
   encodeDrawingGeometry,
   lowerTimeframes,
@@ -69,7 +70,7 @@ function toChartCandles(
   timeframe: ChartTimeframeCode,
 ): readonly AriseCandle[] {
   const mt5Timeframe = MT5_TIMEFRAME[timeframe];
-  return workspace.candles
+  const liveCandles = workspace.candles
     .filter((entry) => entry.canonicalSymbol === symbol && entry.timeframe === mt5Timeframe)
     .map((entry) => ({
       time: Math.floor(Date.parse(entry.openTime) / 1000),
@@ -80,6 +81,8 @@ function toChartCandles(
     }))
     .filter((entry) => Number.isFinite(entry.time))
     .sort((left, right) => left.time - right.time);
+  if (liveCandles.length > 0 || workspace.connection.state === 'CONNECTED') return liveCandles;
+  return createDemoCandles(symbol, timeframe);
 }
 
 function shiftGeometry(geometry: DrawingGeometry, priceDelta: number): DrawingGeometry {
@@ -216,9 +219,10 @@ export function TradingChart({ symbol, theme }: Props) {
       else if (workspace.connection.state === 'CONNECTED')
         setStatus(`NO ${timeframe} DATA`);
       else
-        setStatus(`MT5 ${workspace.connection.state}`);
+        setStatus(`MT5 ${workspace.connection.state} · OFFLINE DEMO`);
     } catch {
-      setStatus('MT5 DATA ERROR');
+      setCandles(createDemoCandles(symbol, timeframe));
+      setStatus('MT5 DATA ERROR · OFFLINE DEMO');
     }
   }, [symbol, timeframe]);
 
