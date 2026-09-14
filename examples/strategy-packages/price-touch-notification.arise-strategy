@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "packageType": "STRATEGY",
+  "packageId": "org.arise.examples.price-touch-notification",
+  "name": "Price Touch Notification",
+  "description": "Observes a trusted price-touch detector and records a notification/evidence-only graph action.",
+  "version": "1.0.0",
+  "createdAt": "2026-09-14T16:00:00.000Z",
+  "author": { "name": "ARISE External Contract Fixture", "source": "docs/STRATEGY_PACKAGE_SPEC.md", "url": null },
+  "minimumAriseVersion": "1.0.0-beta.2",
+  "capabilityRequirements": ["strategy-graph", "timeframe-purpose", "evidence", "decision-trace", "observe"],
+  "dependencies": {
+    "detectors": [{ "id": "price_touch", "versionRange": ">=1.0.0", "required": true }],
+    "strategies": [],
+    "combos": []
+  },
+  "parameters": [{
+    "key": "level", "label": "Price level", "description": "The price to observe.", "type": "PRICE",
+    "defaultValue": 1.1, "minimum": 0, "maximum": null, "allowedValues": [], "required": true,
+    "unit": "price", "scope": "LOCAL", "access": "USER_EDITABLE"
+  }],
+  "graph": {
+    "nodes": [
+      {
+        "id": "price-touch", "family": "STRATEGY", "label": "Price Touch", "position": { "x": 40, "y": 80 },
+        "timeframe": "M5", "purposes": ["ENTRY"], "importance": "REQUIRED", "executionMode": "OBSERVE",
+        "strategyRef": { "packageId": "org.arise.examples.price-touch-notification", "versionRange": "1.0.0" },
+        "parameters": { "level": 1.1, "tolerancePips": 0, "priceSource": "CHART_PRICE" }
+      },
+      {
+        "id": "notify", "family": "ACTION", "label": "Notify", "position": { "x": 280, "y": 80 },
+        "timeframe": "M5", "purposes": ["ENTRY"], "importance": "REQUIRED", "executionMode": "OBSERVE",
+        "actionKey": "notify", "parameters": { "message": "Price touched the observed level" }
+      }
+    ],
+    "edges": [{ "id": "touch-then-notify", "sourceNodeId": "price-touch", "targetNodeId": "notify", "sourcePort": "out", "targetPort": "in" }]
+  },
+  "timeframeMappings": [{ "timeframe": "M5", "purposes": ["ENTRY"], "importance": "REQUIRED", "mode": "AUTOMATED" }],
+  "evidencePolicy": {
+    "profile": "STRATEGY_EVIDENCE_ONLY",
+    "events": ["CONFIRMATION", "STAGE_SUMMARY"],
+    "references": ["CANDLE", "DECISION_TRACE", "RUNTIME_NODE_EVENT", "STAGE_SUMMARY"]
+  },
+  "deploymentRestrictions": { "allowedModes": ["OBSERVE"], "preferredMode": "OBSERVE" },
+  "definition": {
+    "category": "NOTIFICATION", "tags": ["external", "observe", "price-touch"],
+    "automationCapability": "AUTOMATABLE",
+    "detector": { "key": "price_touch", "version": "1", "evaluationMode": "ON_PRICE_UPDATE" }
+  },
+  "template": null,
+  "integrity": { "algorithm": "SHA-256", "checksum": "9e44f4f10eedc9dc4f011fd5ae4dc4ef58d89fc3bf4ac9f00c1e16c6093c522c" }
+}

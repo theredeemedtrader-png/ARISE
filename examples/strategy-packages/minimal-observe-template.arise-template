@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "packageType": "TEMPLATE",
+  "packageId": "org.arise.examples.observe-template",
+  "name": "Neutral Observe Template",
+  "description": "A minimal higher-level OBSERVE framework using the Price Touch Notification dependency.",
+  "version": "1.0.0",
+  "createdAt": "2026-09-14T16:10:00.000Z",
+  "author": { "name": "ARISE External Contract Fixture", "source": "docs/STRATEGY_PACKAGE_SPEC.md", "url": null },
+  "minimumAriseVersion": "1.0.0-beta.2",
+  "capabilityRequirements": ["strategy-graph", "timeframe-purpose", "evidence", "observe"],
+  "dependencies": {
+    "detectors": [],
+    "strategies": [{ "id": "org.arise.examples.price-touch-notification", "versionRange": "^1.0.0", "required": true }],
+    "combos": [{ "id": "org.arise.examples.touch-notify-combo", "versionRange": "^1.0.0", "required": true }]
+  },
+  "parameters": [],
+  "graph": {
+    "nodes": [{
+      "id": "observe-touch", "family": "STRATEGY", "label": "Observe Price Touch", "position": { "x": 80, "y": 80 },
+      "timeframe": "M5", "purposes": ["ENTRY"], "importance": "INFORMATIONAL", "executionMode": "OBSERVE",
+      "strategyRef": { "packageId": "org.arise.examples.price-touch-notification", "versionRange": "^1.0.0" },
+      "parameters": { "level": 1.1 }
+    }],
+    "edges": []
+  },
+  "timeframeMappings": [
+    { "timeframe": "D", "purposes": ["HINDSIGHT", "AREA"], "importance": "OPTIONAL", "mode": "MANUAL" },
+    { "timeframe": "M5", "purposes": ["ENTRY"], "importance": "INFORMATIONAL", "mode": "AUTOMATED" }
+  ],
+  "evidencePolicy": { "profile": "STRATEGY_EVIDENCE_ONLY", "events": ["CONFIRMATION", "STAGE_SUMMARY"], "references": ["CANDLE", "DECISION_TRACE", "STAGE_SUMMARY"] },
+  "deploymentRestrictions": { "allowedModes": ["OBSERVE"], "preferredMode": "OBSERVE" },
+  "definition": null,
+  "template": {
+    "attemptBudget": { "maxAttempts": 0 },
+    "stackingPolicy": { "mode": "MANUAL", "maxActiveScouts": 0 },
+    "protectionPolicyReferences": [],
+    "colonyConfiguration": { "automaticActivation": false }
+  },
+  "integrity": { "algorithm": "SHA-256", "checksum": "1796629f96ae0ff1820f6ab66d2ff06cc2f923a378dc52f7096d4d45e0297551" }
+}

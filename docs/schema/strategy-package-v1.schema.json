@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arise.local/schemas/strategy-package-v1.schema.json",
+  "title": "ARISE Strategy Package v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "packageType", "packageId", "name", "description", "version", "createdAt", "author", "minimumAriseVersion", "capabilityRequirements", "dependencies", "parameters", "graph", "timeframeMappings", "evidencePolicy", "deploymentRestrictions", "definition", "template", "integrity"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "packageType": { "enum": ["STRATEGY", "COMBO", "TEMPLATE"] },
+    "packageId": { "$ref": "#/$defs/id" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "description": { "type": "string" },
+    "version": { "$ref": "#/$defs/semver" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "author": {
+      "type": "object", "additionalProperties": false, "required": ["name", "source", "url"],
+      "properties": { "name": { "type": "string", "minLength": 1 }, "source": { "type": "string", "minLength": 1 }, "url": { "type": ["string", "null"] } }
+    },
+    "minimumAriseVersion": { "$ref": "#/$defs/semver" },
+    "capabilityRequirements": { "type": "array", "maxItems": 256, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+    "dependencies": {
+      "type": "object", "additionalProperties": false, "required": ["detectors", "strategies", "combos"],
+      "properties": {
+        "detectors": { "$ref": "#/$defs/dependencyList" },
+        "strategies": { "$ref": "#/$defs/dependencyList" },
+        "combos": { "$ref": "#/$defs/dependencyList" }
+      }
+    },
+    "parameters": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/parameter" } },
+    "graph": { "anyOf": [{ "$ref": "#/$defs/graph" }, { "type": "null" }] },
+    "timeframeMappings": { "type": "array", "maxItems": 128, "items": { "$ref": "#/$defs/timeframeMapping" } },
+    "evidencePolicy": { "$ref": "#/$defs/evidencePolicy" },
+    "deploymentRestrictions": {
+      "type": "object", "additionalProperties": false, "required": ["allowedModes", "preferredMode"],
+      "properties": {
+        "allowedModes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["OBSERVE", "SHADOW", "DEMO"] } },
+        "preferredMode": { "enum": ["OBSERVE", "SHADOW", "DEMO"] }
+      }
+    },
+    "definition": { "anyOf": [{ "$ref": "#/$defs/definition" }, { "type": "null" }] },
+    "template": { "anyOf": [{ "$ref": "#/$defs/template" }, { "type": "null" }] },
+    "integrity": {
+      "type": "object", "additionalProperties": false, "required": ["algorithm", "checksum"],
+      "properties": { "algorithm": { "const": "SHA-256" }, "checksum": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "packageType": { "const": "STRATEGY" } } }, "then": { "properties": { "definition": { "$ref": "#/$defs/definition" }, "template": { "type": "null" } } } },
+    { "if": { "properties": { "packageType": { "const": "COMBO" } } }, "then": { "properties": { "definition": { "type": "null" }, "template": { "type": "null" }, "graph": { "$ref": "#/$defs/graph" } } } },
+    { "if": { "properties": { "packageType": { "const": "TEMPLATE" } } }, "then": { "properties": { "definition": { "type": "null" }, "template": { "$ref": "#/$defs/template" }, "graph": { "$ref": "#/$defs/graph" } } } }
+  ],
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$" },
+    "semver": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$" },
+    "dependency": {
+      "type": "object", "additionalProperties": false, "required": ["id", "versionRange", "required"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "versionRange": { "type": "string", "minLength": 1, "maxLength": 64 }, "required": { "type": "boolean" } }
+    },
+    "dependencyList": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/dependency" } },
+    "parameter": {
+      "type": "object", "additionalProperties": false,
+      "required": ["key", "label", "description", "type", "defaultValue", "minimum", "maximum", "allowedValues", "required", "unit", "scope", "access"],
+      "properties": {
+        "key": { "$ref": "#/$defs/id" }, "label": { "type": "string", "minLength": 1 }, "description": { "type": "string" },
+        "type": { "enum": ["BOOLEAN", "INTEGER", "DECIMAL", "PIPS", "PRICE", "TIMEFRAME", "DIRECTION", "ENUM", "STRING", "DURATION", "CANDLE_COUNT", "MARKET_OBJECT_ROLE", "MARKET_OBJECT_TYPE", "DETECTOR_REFERENCE"] },
+        "defaultValue": {}, "minimum": { "type": ["number", "null"] }, "maximum": { "type": ["number", "null"] },
+        "allowedValues": { "type": "array", "maxItems": 128, "items": { "type": ["string", "number", "boolean"] } },
+        "required": { "type": "boolean" }, "unit": { "type": ["string", "null"] }, "scope": { "enum": ["INHERITED", "LOCAL"] }, "access": { "enum": ["USER_EDITABLE", "READ_ONLY"] }
+      }
+    },
+    "nodeBase": {
+      "type": "object",
+      "required": ["id", "family", "label", "position", "timeframe", "purposes", "importance", "executionMode"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" }, "family": { "enum": ["STRATEGY", "LOGIC", "MODIFIER", "MARKET_OBJECT", "STATE", "ACTION"] }, "label": { "type": "string", "minLength": 1 },
+        "position": { "type": "object", "additionalProperties": false, "required": ["x", "y"], "properties": { "x": { "type": "number" }, "y": { "type": "number" } } },
+        "timeframe": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] }, "purposes": { "type": "array", "maxItems": 3, "uniqueItems": true, "items": { "enum": ["HINDSIGHT", "AREA", "ENTRY"] } },
+        "importance": { "enum": ["REQUIRED", "OPTIONAL", "INFORMATIONAL"] }, "executionMode": { "enum": ["OBSERVE", "NOTIFY", "CONFIRM", "AUTO"] }
+      }
+    },
+    "strategyNode": { "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "type": "object", "additionalProperties": false, "required": ["id", "family", "label", "position", "timeframe", "purposes", "importance", "executionMode", "strategyRef", "parameters"], "properties": { "id": { "$ref": "#/$defs/id" }, "family": { "const": "STRATEGY" }, "label": { "type": "string" }, "position": { "$ref": "#/$defs/nodeBase/properties/position" }, "timeframe": { "$ref": "#/$defs/nodeBase/properties/timeframe" }, "purposes": { "$ref": "#/$defs/nodeBase/properties/purposes" }, "importance": { "$ref": "#/$defs/nodeBase/properties/importance" }, "executionMode": { "$ref": "#/$defs/nodeBase/properties/executionMode" }, "strategyRef": { "type": "object", "additionalProperties": false, "required": ["packageId", "versionRange"], "properties": { "packageId": { "$ref": "#/$defs/id" }, "versionRange": { "type": "string" } } }, "parameters": { "type": "object" } } }] },
+    "logicNode": { "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "type": "object", "properties": { "family": { "const": "LOGIC" }, "operator": { "enum": ["AND", "OR", "THEN", "NOT"] } }, "required": ["operator"] }] },
+    "modifierNode": { "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "type": "object", "properties": { "family": { "const": "MODIFIER" }, "modifierKey": { "$ref": "#/$defs/id" }, "parameters": { "type": "object" } }, "required": ["modifierKey", "parameters"] }] },
+    "marketObjectNode": { "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "type": "object", "properties": { "family": { "const": "MARKET_OBJECT" }, "marketObjectId": { "type": ["string", "null"] }, "marketObjectVersionId": { "type": ["string", "null"] }, "conditionKey": { "$ref": "#/$defs/id" } }, "required": ["marketObjectId", "marketObjectVersionId", "conditionKey"] }] },
+    "stateNode": { "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "type": "object", "properties": { "family": { "const": "STATE" }, "stateKey": { "$ref": "#/$defs/id" } }, "required": ["stateKey"] }] },
+    "actionNode": { "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "type": "object", "properties": { "family": { "const": "ACTION" }, "actionKey": { "$ref": "#/$defs/id" }, "parameters": { "type": "object" } }, "required": ["actionKey", "parameters"] }] },
+    "graph": {
+      "type": "object", "additionalProperties": false, "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": { "type": "array", "maxItems": 512, "items": { "oneOf": [{ "$ref": "#/$defs/strategyNode" }, { "$ref": "#/$defs/logicNode" }, { "$ref": "#/$defs/modifierNode" }, { "$ref": "#/$defs/marketObjectNode" }, { "$ref": "#/$defs/stateNode" }, { "$ref": "#/$defs/actionNode" }] } },
+        "edges": { "type": "array", "maxItems": 1024, "items": { "type": "object", "additionalProperties": false, "required": ["id", "sourceNodeId", "targetNodeId", "sourcePort", "targetPort"], "properties": { "id": { "$ref": "#/$defs/id" }, "sourceNodeId": { "$ref": "#/$defs/id" }, "targetNodeId": { "$ref": "#/$defs/id" }, "sourcePort": { "$ref": "#/$defs/id" }, "targetPort": { "$ref": "#/$defs/id" } } } }
+      }
+    },
+    "timeframeMapping": { "type": "object", "additionalProperties": false, "required": ["timeframe", "purposes", "importance", "mode"], "properties": { "timeframe": { "$ref": "#/$defs/id" }, "purposes": { "$ref": "#/$defs/nodeBase/properties/purposes" }, "importance": { "$ref": "#/$defs/nodeBase/properties/importance" }, "mode": { "enum": ["MANUAL", "CONFIRMATION", "AUTOMATED", "IGNORED"] } } },
+    "evidencePolicy": { "type": "object", "additionalProperties": false, "required": ["profile", "events", "references"], "properties": { "profile": { "enum": ["ENTRY_ONLY", "STRATEGY_EVIDENCE_AND_ENTRY", "STRATEGY_EVIDENCE_ONLY", "CUSTOM"] }, "events": { "type": "array", "items": { "enum": ["TRIGGER", "CONFIRMATION", "FAILURE", "EXPIRY", "ENTRY", "STAGE_SUMMARY"] } }, "references": { "type": "array", "items": { "enum": ["CANDLE", "MARKET_OBJECT", "DECISION_TRACE", "RUNTIME_NODE_EVENT", "ENTRY_SNAPSHOT", "STAGE_SUMMARY"] } } } },
+    "definition": { "type": "object", "additionalProperties": false, "required": ["category", "tags", "automationCapability", "detector"], "properties": { "category": { "type": "string", "minLength": 1 }, "tags": { "type": "array", "items": { "type": "string", "minLength": 1 } }, "automationCapability": { "enum": ["MANUAL", "DETECTABLE", "AUTOMATABLE"] }, "detector": { "anyOf": [{ "type": "null" }, { "type": "object", "additionalProperties": false, "required": ["key", "version", "evaluationMode"], "properties": { "key": { "$ref": "#/$defs/id" }, "version": { "type": "string" }, "evaluationMode": { "enum": ["ON_TICK", "ON_PRICE_UPDATE", "ON_BAR_UPDATE", "ON_BAR_CLOSE", "ON_EVENT", "MANUAL"] } } }] } } },
+    "template": { "type": "object", "additionalProperties": false, "required": ["attemptBudget", "stackingPolicy", "protectionPolicyReferences", "colonyConfiguration"], "properties": { "attemptBudget": { "type": "object" }, "stackingPolicy": { "type": "object" }, "protectionPolicyReferences": { "type": "array", "items": { "$ref": "#/$defs/id" } }, "colonyConfiguration": { "type": "object" } } }
+  }
+}

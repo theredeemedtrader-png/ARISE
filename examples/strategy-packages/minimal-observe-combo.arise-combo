@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "packageType": "COMBO",
+  "packageId": "org.arise.examples.touch-notify-combo",
+  "name": "Touch Then Notify",
+  "description": "A minimal reusable composition of the external Price Touch Notification strategy.",
+  "version": "1.0.0",
+  "createdAt": "2026-09-14T16:05:00.000Z",
+  "author": { "name": "ARISE External Contract Fixture", "source": "docs/STRATEGY_PACKAGE_SPEC.md", "url": null },
+  "minimumAriseVersion": "1.0.0-beta.2",
+  "capabilityRequirements": ["strategy-graph", "observe"],
+  "dependencies": {
+    "detectors": [],
+    "strategies": [{ "id": "org.arise.examples.price-touch-notification", "versionRange": "^1.0.0", "required": true }],
+    "combos": []
+  },
+  "parameters": [],
+  "graph": {
+    "nodes": [
+      {
+        "id": "touch", "family": "STRATEGY", "label": "Price Touch", "position": { "x": 40, "y": 80 },
+        "timeframe": "M5", "purposes": ["ENTRY"], "importance": "REQUIRED", "executionMode": "OBSERVE",
+        "strategyRef": { "packageId": "org.arise.examples.price-touch-notification", "versionRange": "^1.0.0" },
+        "parameters": { "level": 1.1 }
+      },
+      {
+        "id": "notify", "family": "ACTION", "label": "Notify", "position": { "x": 280, "y": 80 },
+        "timeframe": "M5", "purposes": ["ENTRY"], "importance": "REQUIRED", "executionMode": "OBSERVE",
+        "actionKey": "notify", "parameters": {}
+      }
+    ],
+    "edges": [{ "id": "touch-notify", "sourceNodeId": "touch", "targetNodeId": "notify", "sourcePort": "out", "targetPort": "in" }]
+  },
+  "timeframeMappings": [{ "timeframe": "M5", "purposes": ["ENTRY"], "importance": "REQUIRED", "mode": "AUTOMATED" }],
+  "evidencePolicy": { "profile": "STRATEGY_EVIDENCE_ONLY", "events": ["CONFIRMATION"], "references": ["DECISION_TRACE", "RUNTIME_NODE_EVENT"] },
+  "deploymentRestrictions": { "allowedModes": ["OBSERVE"], "preferredMode": "OBSERVE" },
+  "definition": null,
+  "template": null,
+  "integrity": { "algorithm": "SHA-256", "checksum": "a2bfa7e3546bab884ab4a3efb7ae3e5a21b471ffddd84660307f5f5962171864" }
+}
