@@ -66,7 +66,9 @@ The following milestones are frozen in the current repository:
 
 The post-roadmap **Real MT5 Demo-Terminal Acceptance Gate passed** against `Eightcap-Demo` / DEMO. Actual runtime entry, fill, verified protection, management, partial/full close, durable replay/reconnect, Desktop restart, and two-Scout Colony journeys passed through the frozen gateways. The final broker snapshot was `0` positions / `0` pending orders. Venue conditions that could not safely be induced are explicitly `NOT REPRODUCIBLE` in the acceptance report and retain deterministic harness coverage.
 
-See `docs/CURRENT_MILESTONE.md`, `M13_REPORT.md`, and `REAL_MT5_DEMO_ACCEPTANCE_REPORT.md` for the exact state and narrow compatibility fixes. Do not enable LIVE trading, add `MT5_LIVE`, begin productization/Strategy Package work without a new milestone, mutate while permission/quote/reconciliation is unhealthy, or redesign frozen milestones.
+**Windows Productization Phase 1 passed** on `product/windows-packaging`. ARISE `1.0.0-beta.1` has an NSIS per-user installer, official generated Windows icon, stable `%LOCALAPPDATA%\ARISE` data/log/backup/config/runtime paths, packaged local MT5 Agent, and private pinned Python/MetaTrader5 runtime. Fresh install, `beta.0` to `beta.1` data retention, uninstall retention, packaged UI/security smoke, and Eightcap-Demo read-only recognition passed. See `WINDOWS_PRODUCTIZATION_REPORT.md`. The branch is not merged or tagged; do not begin Phase 2 or add an updater without an explicit task.
+
+See `docs/CURRENT_MILESTONE.md`, `M13_REPORT.md`, `REAL_MT5_DEMO_ACCEPTANCE_REPORT.md`, and `WINDOWS_PRODUCTIZATION_REPORT.md` for the exact state and narrow compatibility fixes. Do not enable LIVE trading, add `MT5_LIVE`, begin Productization Phase 2/Strategy Package work without a new milestone, mutate while permission/quote/reconciliation is unhealthy, or redesign frozen milestones.
 
 ## 4. Canonical vocabulary
 

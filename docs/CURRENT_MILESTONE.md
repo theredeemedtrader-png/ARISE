@@ -2,11 +2,13 @@
 
 **Updated:** 2026-09-14  
 **Frozen milestones:** M0–M13  
-**Current gate:** Real MT5 Demo-Terminal Acceptance — PASSED
+**Current gate:** Windows Productization Phase 1 — PASSED on `product/windows-packaging`
 
 ## Status
 
-The roadmap and post-roadmap real MT5 demo-terminal gate are complete. M0–M13 remain frozen. Do not begin productization, Strategy Package work, or LIVE enablement without a new explicit milestone.
+The roadmap, post-roadmap real MT5 demo-terminal gate, and Windows Productization Phase 1 are complete. M0–M13 remain frozen. Do not begin Productization Phase 2, Strategy Package work, or LIVE enablement without a new explicit milestone. Phase 1 is isolated on `product/windows-packaging` and is not merged or tagged.
+
+ARISE `1.0.0-beta.1` now builds as a per-user NSIS Windows installer with official brand assets, stable `%LOCALAPPDATA%\ARISE` data paths, startup database backups, production diagnostics, and a packaged local Agent/private Python bridge. Installed-app, upgrade/data-retention, uninstall-retention, icon, renderer-isolation, and Eightcap-Demo read-only recognition checks passed. See `WINDOWS_PRODUCTIZATION_REPORT.md`.
 
 Actual Eightcap-Demo acceptance proved real fill/protection/management, durable replay without duplicate exposure, Desktop restart reconciliation, partial close with quantity-aware SL update, TP set/remove, no-worsening rejection, and a two-Scout Colony journey. Final broker state was `0` positions / `0` pending orders.
 
@@ -31,4 +33,4 @@ See `REAL_MT5_DEMO_ACCEPTANCE_REPORT.md` for exact results and explicit `NOT REP
 
 Current recommendation:
 
-REAL MT5 DEMO ACCEPTANCE: PASSED
+WINDOWS PRODUCTIZATION PHASE 1: PASSED
