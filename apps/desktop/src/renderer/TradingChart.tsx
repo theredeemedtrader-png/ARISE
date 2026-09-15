@@ -19,10 +19,23 @@ import { Icon } from './icons';
 type DrawingTool = 'SELECT' | 'HORIZONTAL' | 'LINE' | 'RAY' | 'RECTANGLE' | 'TRENDLINE' | 'POINT' | 'TEXT';
 type Theme = 'dark' | 'light';
 type InspectorTab = 'OBJECTS' | 'LAYERS' | 'EXECUTION';
+type EditHandle = 'BODY' | 'START' | 'END' | 'POINT';
 
 interface Props {
   readonly symbol: string;
   readonly theme: Theme;
+}
+
+interface EditSession {
+  readonly objectId: string;
+  readonly handle: EditHandle;
+  readonly originPointer: ChartPoint;
+  readonly originGeometry: DrawingGeometry;
+}
+
+interface EditPreview {
+  readonly objectId: string;
+  readonly geometry: DrawingGeometry;
 }
 
 const TOOL_ICON: Record<DrawingTool, Parameters<typeof Icon>[0]['name']> = {
@@ -86,20 +99,81 @@ function toChartCandles(
   return createDemoCandles(symbol, timeframe);
 }
 
-function shiftGeometry(geometry: DrawingGeometry, priceDelta: number): DrawingGeometry {
-  const shift = (point: ChartPoint) => ({ ...point, price: point.price + priceDelta });
+function movePoint(point: ChartPoint, timeDelta: number, priceDelta: number): ChartPoint {
+  return { time: point.time + timeDelta, price: point.price + priceDelta };
+}
+
+function translateGeometry(geometry: DrawingGeometry, timeDelta: number, priceDelta: number): DrawingGeometry {
+  const move = (point: ChartPoint) => movePoint(point, timeDelta, priceDelta);
   switch (geometry.kind) {
     case 'LINE':
     case 'RAY':
     case 'TRENDLINE':
     case 'RECTANGLE':
-      return { kind: geometry.kind, start: shift(geometry.start), end: shift(geometry.end) };
+      return { kind: geometry.kind, start: move(geometry.start), end: move(geometry.end) };
     case 'POINT':
     case 'CANDLE_REFERENCE':
-      return { kind: geometry.kind, point: shift(geometry.point) };
+      return { kind: geometry.kind, point: move(geometry.point) };
     case 'TEXT':
-      return { kind: geometry.kind, point: shift(geometry.point), text: geometry.text };
+      return { kind: geometry.kind, point: move(geometry.point), text: geometry.text };
   }
+}
+
+function editGeometry(
+  geometry: DrawingGeometry,
+  handle: EditHandle,
+  originPointer: ChartPoint,
+  currentPointer: ChartPoint,
+): DrawingGeometry {
+  if (handle === 'BODY') {
+    return translateGeometry(
+      geometry,
+      currentPointer.time - originPointer.time,
+      currentPointer.price - originPointer.price,
+    );
+  }
+  if (geometry.kind === 'LINE' || geometry.kind === 'RAY' || geometry.kind === 'TRENDLINE') {
+    const horizontal = geometry.kind === 'LINE' && Math.abs(geometry.start.price - geometry.end.price) <= 1e-12;
+    if (handle === 'START') {
+      if (horizontal) {
+        return {
+          kind: geometry.kind,
+          start: currentPointer,
+          end: { ...geometry.end, price: currentPointer.price },
+        };
+      }
+      return { kind: geometry.kind, start: currentPointer, end: geometry.end };
+    }
+    if (handle === 'END') {
+      if (horizontal) {
+        return {
+          kind: geometry.kind,
+          start: { ...geometry.start, price: currentPointer.price },
+          end: currentPointer,
+        };
+      }
+      return { kind: geometry.kind, start: geometry.start, end: currentPointer };
+    }
+  }
+  if (geometry.kind === 'RECTANGLE') {
+    if (handle === 'START') return { kind: 'RECTANGLE', start: currentPointer, end: geometry.end };
+    if (handle === 'END') return { kind: 'RECTANGLE', start: geometry.start, end: currentPointer };
+  }
+  if (handle === 'POINT') {
+    if (geometry.kind === 'POINT' || geometry.kind === 'CANDLE_REFERENCE')
+      return { kind: geometry.kind, point: currentPointer };
+    if (geometry.kind === 'TEXT')
+      return { kind: 'TEXT', point: currentPointer, text: geometry.text };
+  }
+  return geometry;
+}
+
+function sameGeometry(left: DrawingGeometry, right: DrawingGeometry): boolean {
+  return JSON.stringify(encodeDrawingGeometry(left)) === JSON.stringify(encodeDrawingGeometry(right));
+}
+
+function shiftGeometry(geometry: DrawingGeometry, priceDelta: number): DrawingGeometry {
+  return translateGeometry(geometry, 0, priceDelta);
 }
 
 function geometryForTool(tool: Exclude<DrawingTool, 'SELECT'>, start: ChartPoint, end: ChartPoint, semanticType: string): DrawingGeometry {
@@ -109,12 +183,32 @@ function geometryForTool(tool: Exclude<DrawingTool, 'SELECT'>, start: ChartPoint
   return { kind: tool, start, end } as DrawingGeometry;
 }
 
-function DrawingShape({ drawing, controller, selected, draft = false, onSelect }: {
+function DrawingNode({ x, y, handle, onEditStart }: {
+  readonly x: number;
+  readonly y: number;
+  readonly handle: EditHandle;
+  readonly onEditStart: (handle: EditHandle, event: ReactPointerEvent<SVGElement>) => void;
+}) {
+  return <circle
+    cx={x}
+    cy={y}
+    r={handle === 'BODY' ? 4 : 5}
+    fill="var(--surface-0)"
+    stroke="var(--blue-bright)"
+    strokeWidth={2}
+    vectorEffect="non-scaling-stroke"
+    pointerEvents="all"
+    style={{ cursor: handle === 'BODY' ? 'move' : 'grab' }}
+    onPointerDown={(event) => onEditStart(handle, event)}
+  />;
+}
+
+function DrawingShape({ drawing, controller, selected, draft = false, onEditStart }: {
   readonly drawing: ChartDrawing;
   readonly controller: AriseChartController;
   readonly selected: boolean;
   readonly draft?: boolean;
-  readonly onSelect: () => void;
+  readonly onEditStart: (handle: EditHandle, event: ReactPointerEvent<SVGElement>) => void;
 }) {
   const coord = (point: ChartPoint) => {
     const x = controller.timeToX(point.time);
@@ -123,15 +217,22 @@ function DrawingShape({ drawing, controller, selected, draft = false, onSelect }
   };
   const className = `market-shape market-shape-${drawing.role.toLowerCase()} ${selected ? 'selected' : ''} ${draft ? 'draft' : ''}`;
   const geometry = drawing.geometry;
-  const select = (event: { stopPropagation(): void }) => {
+  const begin = (handle: EditHandle) => (event: ReactPointerEvent<SVGElement>) => {
     if (draft) return;
-    event.stopPropagation();
-    onSelect();
+    onEditStart(handle, event);
   };
   if (geometry.kind === 'RECTANGLE') {
     const a = coord(geometry.start); const b = coord(geometry.end);
     if (!a || !b) return null;
-    return <rect className={className} x={Math.min(a.x,b.x)} y={Math.min(a.y,b.y)} width={Math.abs(b.x-a.x)} height={Math.abs(b.y-a.y)} rx="3" onPointerDown={select}/>;
+    const center = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    return <g>
+      <rect className={className} x={Math.min(a.x,b.x)} y={Math.min(a.y,b.y)} width={Math.abs(b.x-a.x)} height={Math.abs(b.y-a.y)} rx="3" onPointerDown={begin('BODY')}/>
+      {selected && !draft ? <>
+        <DrawingNode x={a.x} y={a.y} handle="START" onEditStart={onEditStart}/>
+        <DrawingNode x={b.x} y={b.y} handle="END" onEditStart={onEditStart}/>
+        <DrawingNode x={center.x} y={center.y} handle="BODY" onEditStart={onEditStart}/>
+      </> : null}
+    </g>;
   }
   if (geometry.kind === 'LINE' || geometry.kind === 'RAY' || geometry.kind === 'TRENDLINE') {
     const a = coord(geometry.start); const b = coord(geometry.end);
@@ -142,17 +243,32 @@ function DrawingShape({ drawing, controller, selected, draft = false, onSelect }
       : 1;
     const endX = geometry.kind === 'RAY' ? a.x + dx * rayScale : b.x;
     const endY = geometry.kind === 'RAY' ? a.y + (b.y - a.y) * rayScale : b.y;
-    return <line className={className} x1={a.x} y1={a.y} x2={endX} y2={endY} onPointerDown={select}/>;
+    const center = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    return <g>
+      {!draft ? <line x1={a.x} y1={a.y} x2={endX} y2={endY} stroke="transparent" strokeWidth={14} pointerEvents="stroke" style={{ cursor: 'move' }} onPointerDown={begin('BODY')}/> : null}
+      <line className={className} x1={a.x} y1={a.y} x2={endX} y2={endY} onPointerDown={begin('BODY')}/>
+      {selected && !draft ? <>
+        <DrawingNode x={a.x} y={a.y} handle="START" onEditStart={onEditStart}/>
+        <DrawingNode x={b.x} y={b.y} handle="END" onEditStart={onEditStart}/>
+        <DrawingNode x={center.x} y={center.y} handle="BODY" onEditStart={onEditStart}/>
+      </> : null}
+    </g>;
   }
   if (geometry.kind === 'TEXT') {
     const valuePoint = coord(geometry.point);
     if (!valuePoint) return null;
-    return <text className={className} x={valuePoint.x+6} y={valuePoint.y-6} onPointerDown={select}>{geometry.text}</text>;
+    return <g>
+      <text className={className} x={valuePoint.x+6} y={valuePoint.y-6} onPointerDown={begin('BODY')}>{geometry.text}</text>
+      {selected && !draft ? <DrawingNode x={valuePoint.x} y={valuePoint.y} handle="POINT" onEditStart={onEditStart}/> : null}
+    </g>;
   }
   if (geometry.kind === 'POINT' || geometry.kind === 'CANDLE_REFERENCE') {
     const valuePoint = coord(geometry.point);
     if (!valuePoint) return null;
-    return <circle className={className} cx={valuePoint.x} cy={valuePoint.y} r={selected ? 6 : 4} onPointerDown={select}/>;
+    return <g>
+      <circle className={className} cx={valuePoint.x} cy={valuePoint.y} r={selected ? 6 : 4} onPointerDown={begin('BODY')}/>
+      {selected && !draft ? <DrawingNode x={valuePoint.x} y={valuePoint.y} handle="POINT" onEditStart={onEditStart}/> : null}
+    </g>;
   }
   return null;
 }
@@ -173,6 +289,7 @@ export function TradingChart({ symbol, theme }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<AriseChartController | null>(null);
   const dragStartRef = useRef<ChartPoint | null>(null);
+  const editSessionRef = useRef<EditSession | null>(null);
   const fitAfterNextDataRef = useRef(true);
   const [timeframe, setTimeframe] = useState<ChartTimeframeCode>('H1');
   const [tool, setTool] = useState<DrawingTool>('SELECT');
@@ -186,6 +303,7 @@ export function TradingChart({ symbol, theme }: Props) {
   const [catalog, setCatalog] = useState<Awaited<ReturnType<typeof window.arise.getChartCatalog>> | null>(null);
   const [candles, setCandles] = useState<readonly AriseCandle[]>([]);
   const [draftGeometry, setDraftGeometry] = useState<DrawingGeometry | null>(null);
+  const [editPreview, setEditPreview] = useState<EditPreview | null>(null);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('OBJECTS');
   const [overlayEpoch, setOverlayEpoch] = useState(0);
   const [status, setStatus] = useState('WAITING FOR MT5');
@@ -193,6 +311,9 @@ export function TradingChart({ symbol, theme }: Props) {
   const hiddenStorageKey = useMemo(() => `arise.chart.hidden-objects.${symbol}`, [symbol]);
   const activeObjects = useMemo(() => objects.filter((entry) => !hiddenObjectIds.has(entry.id)), [hiddenObjectIds, objects]);
   const visibleObjects = useMemo(() => activeObjects.filter((entry) => entry.timeframe === null || entry.timeframe === timeframe), [activeObjects, timeframe]);
+  const renderedObjects = useMemo(() => visibleObjects.map((entry) => editPreview?.objectId === entry.id
+    ? { ...entry, geometry: editPreview.geometry }
+    : entry), [editPreview, visibleObjects]);
   const selectedObject = activeObjects.find((entry) => entry.id === selectedObjectId) ?? null;
   const instrument = catalog?.instruments.find((entry) => entry.symbol === symbol) ?? null;
   const hiddenCount = objects.length - activeObjects.length;
@@ -268,6 +389,8 @@ export function TradingChart({ symbol, theme }: Props) {
     setSelectedObjectId(null);
     setSelectedCandle(null);
     setProjectionStack([]);
+    editSessionRef.current = null;
+    setEditPreview(null);
   }, [loadObjects]);
 
   useEffect(() => {
@@ -326,7 +449,9 @@ export function TradingChart({ symbol, theme }: Props) {
       if (editing) return;
       if (event.key === 'Escape') {
         dragStartRef.current = null;
+        editSessionRef.current = null;
         setDraftGeometry(null);
+        setEditPreview(null);
         setTool('SELECT');
         return;
       }
@@ -362,6 +487,35 @@ export function TradingChart({ symbol, theme }: Props) {
     }
   };
 
+  const reviseGeometry = async (marketObjectId: string, geometry: DrawingGeometry) => {
+    const revised = await window.arise.reviseChartObject({
+      marketObjectId,
+      geometryJson: encodeDrawingGeometry(geometry),
+    });
+    const drawing = toDrawing(revised);
+    if (!drawing) return;
+    setObjects((current)=>current.map((entry)=>entry.id===drawing.id?drawing:entry));
+    setSelectedObjectId(drawing.id);
+    setStatus(`REVISION v${drawing.versionNo} SAVED`);
+  };
+
+  const beginObjectEdit = (drawing: ChartDrawing, handle: EditHandle, event: ReactPointerEvent<SVGElement>) => {
+    if (tool !== 'SELECT') return;
+    const point = controllerRef.current?.pointFromClient(event.clientX, event.clientY) ?? null;
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedObjectId(drawing.id);
+    editSessionRef.current = {
+      objectId: drawing.id,
+      handle,
+      originPointer: point,
+      originGeometry: drawing.geometry,
+    };
+    setEditPreview({ objectId: drawing.id, geometry: drawing.geometry });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (tool === 'SELECT') return;
     const point = controllerRef.current?.pointFromClient(event.clientX, event.clientY) ?? null;
@@ -372,6 +526,16 @@ export function TradingChart({ symbol, theme }: Props) {
   };
 
   const pointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const editSession = editSessionRef.current;
+    if (editSession) {
+      const current = controllerRef.current?.pointFromClient(event.clientX, event.clientY) ?? null;
+      if (!current) return;
+      setEditPreview({
+        objectId: editSession.objectId,
+        geometry: editGeometry(editSession.originGeometry, editSession.handle, editSession.originPointer, current),
+      });
+      return;
+    }
     if (tool === 'SELECT' || !dragStartRef.current) return;
     const end = controllerRef.current?.pointFromClient(event.clientX, event.clientY) ?? null;
     if (!end) return;
@@ -379,6 +543,18 @@ export function TradingChart({ symbol, theme }: Props) {
   };
 
   const pointerUp = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const editSession = editSessionRef.current;
+    if (editSession) {
+      const current = controllerRef.current?.pointFromClient(event.clientX, event.clientY) ?? null;
+      const geometry = current
+        ? editGeometry(editSession.originGeometry, editSession.handle, editSession.originPointer, current)
+        : editSession.originGeometry;
+      editSessionRef.current = null;
+      setEditPreview(null);
+      if (!sameGeometry(editSession.originGeometry, geometry))
+        reviseGeometry(editSession.objectId, geometry).catch(() => setStatus('REVISION SAVE ERROR'));
+      return;
+    }
     if (tool === 'SELECT') return;
     const start = dragStartRef.current;
     const end = controllerRef.current?.pointFromClient(event.clientX, event.clientY) ?? null;
@@ -390,21 +566,21 @@ export function TradingChart({ symbol, theme }: Props) {
 
   const pointerCancel = () => {
     dragStartRef.current = null;
+    editSessionRef.current = null;
     setDraftGeometry(null);
+    setEditPreview(null);
   };
 
   const nudgeSelected = async (direction: 1 | -1) => {
     if (!selectedObject || !instrument) return;
     const geometry = shiftGeometry(selectedObject.geometry, instrument.pipSize * direction);
-    const revised = await window.arise.reviseChartObject({ marketObjectId: selectedObject.id, geometryJson: encodeDrawingGeometry(geometry) });
-    const drawing = toDrawing(revised);
-    if (!drawing) return;
-    setObjects((current)=>current.map((entry)=>entry.id===drawing.id?drawing:entry));
-    setStatus(`REVISION v${drawing.versionNo} SAVED`);
+    await reviseGeometry(selectedObject.id, geometry);
   };
 
   const chooseTimeframe = (next: ChartTimeframeCode) => {
     fitAfterNextDataRef.current = true;
+    editSessionRef.current = null;
+    setEditPreview(null);
     setTimeframe(next);
     setProjectionStack([]);
     setSelectedCandle(null);
@@ -437,14 +613,14 @@ export function TradingChart({ symbol, theme }: Props) {
       </header>
 
       <div className="chart-stage">
-        <div className="drawing-toolbar" aria-label="Drawing tools">{(['SELECT','HORIZONTAL','LINE','RAY','RECTANGLE','TRENDLINE','POINT','TEXT'] as const).map((entry)=><button key={entry} className={tool===entry?'active':''} onClick={()=>{setTool(entry);setDraftGeometry(null);dragStartRef.current=null;}} title={entry === 'HORIZONTAL' ? 'HORIZONTAL LINE' : entry}><Icon name={TOOL_ICON[entry]}/></button>)}</div>
+        <div className="drawing-toolbar" aria-label="Drawing tools">{(['SELECT','HORIZONTAL','LINE','RAY','RECTANGLE','TRENDLINE','POINT','TEXT'] as const).map((entry)=><button key={entry} className={tool===entry?'active':''} onClick={()=>{setTool(entry);setDraftGeometry(null);editSessionRef.current=null;setEditPreview(null);dragStartRef.current=null;}} title={entry === 'HORIZONTAL' ? 'HORIZONTAL LINE' : entry}><Icon name={TOOL_ICON[entry]}/></button>)}</div>
         <div ref={hostRef} className="arise-chart-host" data-testid="lightweight-chart-host"/>
         <svg data-epoch={overlayEpoch} className={`market-overlay ${tool!=='SELECT'?'drawing-active':''}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel}>
           {projectionStack.map((projection,index)=><ProjectionShape key={projection.id} projection={projection} controller={controllerRef.current!} active={index===projectionStack.length-1}/>) }
-          {controllerRef.current ? visibleObjects.map((drawing)=><DrawingShape key={`${drawing.id}:${drawing.versionNo}`} drawing={drawing} controller={controllerRef.current!} selected={drawing.id===selectedObjectId} onSelect={()=>setSelectedObjectId(drawing.id)}/>) : null}
-          {controllerRef.current && draftDrawing ? <DrawingShape drawing={draftDrawing} controller={controllerRef.current} selected={false} draft onSelect={()=>undefined}/> : null}
+          {controllerRef.current ? renderedObjects.map((drawing)=><DrawingShape key={`${drawing.id}:${drawing.versionNo}`} drawing={drawing} controller={controllerRef.current!} selected={drawing.id===selectedObjectId} onEditStart={(handle,event)=>beginObjectEdit(drawing,handle,event)}/>) : null}
+          {controllerRef.current && draftDrawing ? <DrawingShape drawing={draftDrawing} controller={controllerRef.current} selected={false} draft onEditStart={()=>undefined}/> : null}
         </svg>
-        <div className="chart-attribution-note">Chart engine: TradingView Lightweight Charts™</div>
+        <div className="chart-attribution-note">Chart engine: TradingView Lightweight Charts™ · times shown in system local time</div>
       </div>
 
       <footer className="projection-bar">
@@ -465,7 +641,7 @@ export function TradingChart({ symbol, theme }: Props) {
           <span className="section-label">NEW MARKET OBJECT</span>
           <label>Meaning<select value={semanticType} onChange={(event: { target: { value: string } })=>setSemanticType(event.target.value)}>{SEMANTICS.map((entry)=><option key={entry}>{entry}</option>)}</select></label>
           <label>Role<select value={role} onChange={(event: { target: { value: string } })=>setRole(event.target.value as typeof role)}>{ROLES.map((entry)=><option key={entry}>{entry}</option>)}</select></label>
-          <p>Choose geometry on the chart toolbar, then drag on the chart. Geometry previews live while dragging and is committed only when released.</p>
+          <p>Choose geometry on the chart toolbar, then drag anywhere in the visible chart — including future space past the current candle. Geometry previews live and is committed on release.</p>
         </section>
         <section className="inspector-section object-list-section">
           <div className="inspector-heading"><span>MARKET OBJECTS</span><b>{visibleObjects.length}</b></div>
@@ -479,7 +655,7 @@ export function TradingChart({ symbol, theme }: Props) {
           <div><span>Role</span><b>{selectedObject.role}</b></div>
           <div><span>Version</span><b>v{selectedObject.versionNo}</b></div>
           <div className="object-nudge"><button onClick={()=>nudgeSelected(1)}>+1 PIP</button><button onClick={()=>nudgeSelected(-1)}>−1 PIP</button><button onClick={()=>hideObject(selectedObject.id)}>DELETE</button></div>
-          <small>Delete/Backspace removes the object from the chart while its immutable persisted history remains untouched. Nudging creates a new MarketObjectVersion.</small>
+          <small>Drag the drawing body or center node to reposition it. Drag endpoint nodes to reshape it. Each completed drag creates a new immutable MarketObjectVersion.</small>
         </section> : null}
       </> : null}
 
