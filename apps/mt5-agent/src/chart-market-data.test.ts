@@ -53,7 +53,7 @@ function snapshot() {
 }
 
 describe('chart market-data snapshot defaults', () => {
-  it('requests all chart timeframes with enough history for a useful chart', () => {
+  it('requests deep history appropriate to each chart timeframe', () => {
     let request: Readonly<Record<string, unknown>> | null = null;
     const connector = new PythonMt5DemoConnector({
       pythonExecutable: 'python',
@@ -85,7 +85,51 @@ describe('chart market-data snapshot defaults', () => {
     expect(request).toMatchObject({
       operation: 'snapshot',
       timeframes: ['M1', 'M5', 'M15', 'H1', 'H4', 'D1', 'W1'],
-      historyBars: 300,
+      historyBarsByTimeframe: {
+        M1: 5_000,
+        M5: 5_000,
+        M15: 4_000,
+        H1: 3_000,
+        H4: 2_000,
+        D1: 1_500,
+        W1: 520,
+      },
     });
+  });
+
+  it('uses only a tiny live tail between periodic deep-history refreshes', () => {
+    const requests: Array<Readonly<Record<string, unknown>>> = [];
+    const connector = new PythonMt5DemoConnector({
+      pythonExecutable: 'python',
+      terminalPath: 'terminal64.exe',
+      ledgerPath: 'ledger.json',
+      symbolMappings: [{ canonicalSymbol: 'EURUSD', brokerSymbol: 'EURUSD.i', pipSize: 0.0001 }],
+      invoke: (value) => {
+        requests.push(value);
+        return {
+          ok: true,
+          snapshot: snapshot(),
+          terminalMetadata: {
+            build: 5833,
+            company: 'MetaQuotes Ltd.',
+            connected: true,
+            tradeAllowed: true,
+            externalApiDisabled: false,
+            accountTradeAllowed: true,
+            accountTradeExpert: true,
+            accountTradeMode: 'DEMO',
+            server: 'Broker-Demo',
+          },
+        };
+      },
+    });
+
+    connector.acceptanceProbe();
+    connector.acceptanceProbe();
+    connector.acceptanceProbe();
+
+    expect(requests[0]).toHaveProperty('historyBarsByTimeframe');
+    expect(requests[1]).toHaveProperty('historyBarsByTimeframe');
+    expect(requests[2]).toMatchObject({ historyBars: 3 });
   });
 });
