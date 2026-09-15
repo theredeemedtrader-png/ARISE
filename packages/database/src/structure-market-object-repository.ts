@@ -40,6 +40,7 @@ function relationId(source: MarketObjectId, type: string, target: MarketObjectId
   return entityId('MarketObjectRelation', `si${STRUCTURE_PERSISTENCE_VERSION}:${type}:${source}:${target}`);
 }
 
+/** Only facts fixed at swing confirmation belong in immutable v1 payload. */
 function swingProperties(swing: StructureSwing): MarketObjectJson {
   return {
     intelligenceSchema: 1,
@@ -58,13 +59,10 @@ function swingProperties(swing: StructureSwing): MarketObjectJson {
     structuralCloseAt: swing.structuralCloseAt,
     confirmedAt: swing.confirmedAt,
     precedingLegId: swing.precedingLegId,
-    followingLegId: swing.followingLegId,
-    parentLegId: swing.parentLegId,
-    parentSwingId: swing.parentSwingId,
-    childSwingIds: swing.childSwingIds,
   };
 }
 
+/** Parent/child membership is stored as relations because it may become known later. */
 function legProperties(leg: StructureLeg): MarketObjectJson {
   return {
     intelligenceSchema: 1,
@@ -83,8 +81,6 @@ function legProperties(leg: StructureLeg): MarketObjectJson {
     wickExtreme: leg.wickExtreme,
     startSwingId: leg.startSwingId,
     endSwingId: leg.endSwingId,
-    parentLegId: leg.parentLegId,
-    childLegIds: leg.childLegIds,
   };
 }
 
