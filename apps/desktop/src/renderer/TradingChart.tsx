@@ -310,7 +310,7 @@ export function TradingChart({ symbol, theme }: Props) {
 
   const hiddenStorageKey = useMemo(() => `arise.chart.hidden-objects.${symbol}`, [symbol]);
   const activeObjects = useMemo(() => objects.filter((entry) => !hiddenObjectIds.has(entry.id)), [hiddenObjectIds, objects]);
-  const visibleObjects = useMemo(() => activeObjects.filter((entry) => entry.timeframe === null || entry.timeframe === timeframe), [activeObjects, timeframe]);
+  const visibleObjects = activeObjects;
   const renderedObjects = useMemo(() => visibleObjects.map((entry) => editPreview?.objectId === entry.id
     ? { ...entry, geometry: editPreview.geometry }
     : entry), [editPreview, visibleObjects]);
@@ -641,11 +641,11 @@ export function TradingChart({ symbol, theme }: Props) {
           <span className="section-label">NEW MARKET OBJECT</span>
           <label>Meaning<select value={semanticType} onChange={(event: { target: { value: string } })=>setSemanticType(event.target.value)}>{SEMANTICS.map((entry)=><option key={entry}>{entry}</option>)}</select></label>
           <label>Role<select value={role} onChange={(event: { target: { value: string } })=>setRole(event.target.value as typeof role)}>{ROLES.map((entry)=><option key={entry}>{entry}</option>)}</select></label>
-          <p>Choose geometry on the chart toolbar, then drag anywhere in the visible chart — including future space past the current candle. Geometry previews live and is committed on release.</p>
+          <p>Choose geometry on the chart toolbar, then drag anywhere in the visible chart — including future space past the current candle. Drawings remain visible when switching chart timeframes; the stored timeframe records their creation context.</p>
         </section>
         <section className="inspector-section object-list-section">
           <div className="inspector-heading"><span>MARKET OBJECTS</span><b>{visibleObjects.length}</b></div>
-          <div className="object-list">{visibleObjects.length ? visibleObjects.map((entry)=><button key={entry.id} className={entry.id===selectedObjectId?'selected':''} onClick={()=>setSelectedObjectId(entry.id)}><span className={`object-role-marker role-${entry.role.toLowerCase()}`}/><div><strong>{entry.name}</strong><span>{entry.semanticType} · {entry.role}</span></div><b>v{entry.versionNo}</b></button>) : <div className="object-empty">No Market Objects on {symbol} {timeframe}.<br/>Draw one directly on the chart.</div>}</div>
+          <div className="object-list">{visibleObjects.length ? visibleObjects.map((entry)=><button key={entry.id} className={entry.id===selectedObjectId?'selected':''} onClick={()=>setSelectedObjectId(entry.id)}><span className={`object-role-marker role-${entry.role.toLowerCase()}`}/><div><strong>{entry.name}</strong><span>{entry.semanticType} · {entry.role}</span></div><b>v{entry.versionNo}</b></button>) : <div className="object-empty">No Market Objects on {symbol}.<br/>Draw one directly on the chart.</div>}</div>
         </section>
         {selectedObject ? <section className="inspector-section selected-object-card">
           <span className="section-label">SELECTED OBJECT</span>
@@ -661,7 +661,7 @@ export function TradingChart({ symbol, theme }: Props) {
 
       {inspectorTab === 'LAYERS' ? <section className="inspector-section object-list-section">
         <div className="inspector-heading"><span>VISIBLE LAYERS</span><b>{visibleObjects.length}</b></div>
-        <p>Select a layer to select the corresponding Market Object on the chart. Deleted chart objects remain preserved in underlying Market Object history.</p>
+        <p>Market Object drawings are global across chart timeframes. The timeframe shown here is the original creation context, not a visibility filter. Deleted chart objects remain preserved in underlying Market Object history.</p>
         {hiddenCount > 0 ? <button className="ghost-button" onClick={restoreHiddenObjects}>RESTORE {hiddenCount} HIDDEN</button> : null}
         <div className="object-list">{visibleObjects.length ? visibleObjects.map((entry)=><button key={entry.id} className={entry.id===selectedObjectId?'selected':''} onClick={()=>setSelectedObjectId(entry.id)}><span className={`object-role-marker role-${entry.role.toLowerCase()}`}/><div><strong>{entry.name}</strong><span>{entry.geometryType} · {entry.timeframe ?? 'GLOBAL'}</span></div><b>v{entry.versionNo}</b></button>) : <div className="object-empty">No visible layers.</div>}</div>
       </section> : null}
