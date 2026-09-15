@@ -24,8 +24,8 @@ export interface PythonMt5DemoConnectorOptions {
   readonly ledgerPath: string;
   readonly symbolMappings: readonly RealMt5SymbolMapping[];
   readonly timeframes?: readonly string[];
-  readonly historyBars?: number;
-  readonly historyBarsByTimeframe?: Readonly<Record<string, number>>;
+  readonly historyBars?: number | undefined;
+  readonly historyBarsByTimeframe?: Readonly<Record<string, number>> | undefined;
   readonly magic?: number;
   readonly timeoutMs?: number;
   readonly now?: () => number;
