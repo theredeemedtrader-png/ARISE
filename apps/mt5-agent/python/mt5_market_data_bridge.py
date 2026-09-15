@@ -117,7 +117,7 @@ def candle_snapshots(symbol: str, timeframe_name: str, bars: int) -> list[dict[s
     descriptor = TIMEFRAMES.get(timeframe_name)
     if descriptor is None:
         return []
-    count = max(1, min(2000, int(bars)))
+    count = max(1, min(10_000, int(bars)))
     rates = mt5.copy_rates_from_pos(symbol, descriptor[0], 0, count)
     if rates is None:
         return []
@@ -184,6 +184,13 @@ def order_snapshot(order: Any) -> dict[str, Any]:
     }
 
 
+def history_count(request: dict[str, Any], timeframe: str) -> int:
+    by_timeframe = request.get("historyBarsByTimeframe")
+    if isinstance(by_timeframe, dict) and timeframe in by_timeframe:
+        return max(1, min(10_000, int(by_timeframe[timeframe])))
+    return max(1, min(10_000, int(request.get("historyBars", 3))))
+
+
 def make_snapshot(request: dict[str, Any], terminal: Any, account: Any) -> dict[str, Any]:
     configured = mapping_by_broker(request)
     positions = list(mt5.positions_get() or [])
@@ -195,7 +202,6 @@ def make_snapshot(request: dict[str, Any], terminal: Any, account: Any) -> dict[
     quotes: list[dict[str, Any]] = []
     candles: list[dict[str, Any]] = []
     missing: list[str] = []
-    history_bars = max(1, min(2000, int(request.get("historyBars", 3))))
     requested_timeframes = [str(value) for value in request.get("timeframes", ["M1", "M5"])]
     for broker_symbol in sorted(needed):
         mapping = configured.get(
@@ -212,7 +218,13 @@ def make_snapshot(request: dict[str, Any], terminal: Any, account: Any) -> dict[
             quotes.append(quote)
             if broker_symbol in configured:
                 for timeframe in requested_timeframes:
-                    candles.extend(candle_snapshots(broker_symbol, timeframe, history_bars))
+                    candles.extend(
+                        candle_snapshots(
+                            broker_symbol,
+                            timeframe,
+                            history_count(request, timeframe),
+                        )
+                    )
         except BridgeError:
             missing.append(broker_symbol)
     complete = bool(terminal.connected) and not missing
