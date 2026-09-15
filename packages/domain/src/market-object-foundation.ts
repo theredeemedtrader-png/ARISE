@@ -174,6 +174,23 @@ export function createDirectionalZone(input: {
   });
 }
 
+/**
+ * Canonical expected retracement approach for directional support/resistance
+ * objects. Bullish zones are normally revisited from above; bearish zones from below.
+ */
+export function createZoneForMarketDirection(input: {
+  readonly low: number;
+  readonly high: number;
+  readonly direction: Exclude<MarketDirection, 'NEUTRAL'>;
+}): DirectionalZone {
+  requireMember(input.direction, ['BULLISH', 'BEARISH'] as const, 'direction');
+  return createDirectionalZone({
+    low: input.low,
+    high: input.high,
+    approachDirection: input.direction === 'BULLISH' ? 'FROM_ABOVE' : 'FROM_BELOW',
+  });
+}
+
 export interface ZonePenetrationMeasurement {
   readonly rawPenetrationRatio: number;
   readonly currentPenetrationRatio: number;
@@ -200,6 +217,51 @@ export function measureZonePenetration(
   });
 }
 
+export interface ZoneInteractionSummary {
+  readonly currentPenetrationRatio: number;
+  readonly maximumPenetrationRatio: number;
+  readonly entered: boolean;
+  readonly fullyTraversed: boolean;
+  readonly firstEntryIndex: number | null;
+  readonly firstTraversalIndex: number | null;
+}
+
+/**
+ * Summarizes an ordered price path without interpreting whether the interaction
+ * is bullish/bearish evidence. This is reusable by FVGs, OBs, VIs, IFVGs, and
+ * manually supplied zones.
+ */
+export function summarizeZoneInteraction(
+  zone: DirectionalZone,
+  pricesInput: readonly number[],
+): ZoneInteractionSummary {
+  if (!Array.isArray(pricesInput) || pricesInput.length === 0)
+    throw new DomainValidationError('Zone interaction requires at least one price');
+  let maximumPenetrationRatio = 0;
+  let firstEntryIndex: number | null = null;
+  let firstTraversalIndex: number | null = null;
+  let currentPenetrationRatio = 0;
+  for (let index = 0; index < pricesInput.length; index += 1) {
+    const measurement = measureZonePenetration(zone, pricesInput[index]!);
+    currentPenetrationRatio = measurement.currentPenetrationRatio;
+    maximumPenetrationRatio = Math.max(
+      maximumPenetrationRatio,
+      measurement.currentPenetrationRatio,
+    );
+    if (firstEntryIndex === null && measurement.inside) firstEntryIndex = index;
+    if (firstTraversalIndex === null && measurement.fullyTraversed)
+      firstTraversalIndex = index;
+  }
+  return Object.freeze({
+    currentPenetrationRatio,
+    maximumPenetrationRatio,
+    entered: firstEntryIndex !== null,
+    fullyTraversed: firstTraversalIndex !== null,
+    firstEntryIndex,
+    firstTraversalIndex,
+  });
+}
+
 export function rangesOverlap(
   first: Readonly<{ low: number; high: number }>,
   second: Readonly<{ low: number; high: number }>,
@@ -209,6 +271,28 @@ export function rangesOverlap(
   const bLow = finite(Math.min(second.low, second.high), 'second.low');
   const bHigh = finite(Math.max(second.low, second.high), 'second.high');
   return aLow <= bHigh && bLow <= aHigh;
+}
+
+export interface RangeOverlapMeasurement {
+  readonly overlaps: boolean;
+  readonly low: number | null;
+  readonly high: number | null;
+  readonly width: number;
+}
+
+export function measureRangeOverlap(
+  first: Readonly<{ low: number; high: number }>,
+  second: Readonly<{ low: number; high: number }>,
+): RangeOverlapMeasurement {
+  const aLow = finite(Math.min(first.low, first.high), 'first.low');
+  const aHigh = finite(Math.max(first.low, first.high), 'first.high');
+  const bLow = finite(Math.min(second.low, second.high), 'second.low');
+  const bHigh = finite(Math.max(second.low, second.high), 'second.high');
+  const low = Math.max(aLow, bLow);
+  const high = Math.min(aHigh, bHigh);
+  if (low > high)
+    return Object.freeze({ overlaps: false, low: null, high: null, width: 0 });
+  return Object.freeze({ overlaps: true, low, high, width: Math.max(0, high - low) });
 }
 
 export function rangeContains(
@@ -227,9 +311,9 @@ export function rangeDistance(
   second: Readonly<{ low: number; high: number }>,
 ): number {
   if (rangesOverlap(first, second)) return 0;
-  const aLow = Math.min(first.low, first.high);
-  const aHigh = Math.max(first.low, first.high);
-  const bLow = Math.min(second.low, second.high);
-  const bHigh = Math.max(second.low, second.high);
+  const aLow = finite(Math.min(first.low, first.high), 'first.low');
+  const aHigh = finite(Math.max(first.low, first.high), 'first.high');
+  const bLow = finite(Math.min(second.low, second.high), 'second.low');
+  const bHigh = finite(Math.max(second.low, second.high), 'second.high');
   return aHigh < bLow ? bLow - aHigh : aLow - bHigh;
 }
