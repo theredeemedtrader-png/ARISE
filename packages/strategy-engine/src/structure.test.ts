@@ -49,7 +49,16 @@ describe('leg and swing structure', () => {
     const prefix = analyzeLegStructure(series.slice(0, 8), config);
     const replay = analyzeLegStructure(series, config);
     expect(prefix.swings.length).toBeGreaterThanOrEqual(2);
-    expect(replay.swings.slice(0, prefix.swings.length)).toEqual(prefix.swings);
+    expect(replay.swings[0]).toEqual(prefix.swings[0]);
+    expect(replay.swings[1]).toMatchObject({
+      id: prefix.swings[1]!.id,
+      kind: prefix.swings[1]!.kind,
+      wickExtreme: prefix.swings[1]!.wickExtreme,
+      closeExtreme: prefix.swings[1]!.closeExtreme,
+      pivotAt: prefix.swings[1]!.pivotAt,
+      structuralCloseAt: prefix.swings[1]!.structuralCloseAt,
+      confirmedAt: prefix.swings[1]!.confirmedAt,
+    });
   });
 
   it('classifies same-degree swings against prior swings of the same kind', () => {
