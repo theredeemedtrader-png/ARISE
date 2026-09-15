@@ -70,10 +70,36 @@ export interface NestedLegStructureResult {
   readonly EXTERIOR: LegStructureResult;
 }
 
-interface MutableSwing extends Omit<StructureSwing, 'childSwingIds'> {
+interface MutableSwing {
+  id: string;
+  degree: StructuralDegree;
+  kind: SwingKind;
+  wickExtreme: number;
+  closeExtreme: number;
+  pivotAt: string;
+  structuralCloseAt: string;
+  confirmedAt: string;
+  classification: SwingClassification;
+  precedingLegId: string | null;
+  followingLegId: string | null;
+  parentLegId: string | null;
+  parentSwingId: string | null;
   childSwingIds: string[];
 }
-interface MutableLeg extends Omit<StructureLeg, 'childLegIds'> {
+
+interface MutableLeg {
+  id: string;
+  degree: StructuralDegree;
+  direction: StructuralDirection;
+  startedAt: string;
+  endedAt: string;
+  confirmedAt: string;
+  startClose: number;
+  endClose: number;
+  wickExtreme: number;
+  startSwingId: string | null;
+  endSwingId: string;
+  parentLegId: string | null;
   childLegIds: string[];
 }
 
@@ -98,7 +124,7 @@ function token(value: string): string {
 function closedCandles(input: readonly MarketCandle[]): readonly MarketCandle[] {
   const candles = input
     .filter((candle) => candle.closedAt !== null)
-    .map((candle) => ({
+    .map((candle) => Object.freeze({
       ...candle,
       openedAt: iso(candle.openedAt, 'candle.openedAt'),
       closedAt: iso(candle.closedAt!, 'candle.closedAt'),
@@ -112,16 +138,13 @@ function closedCandles(input: readonly MarketCandle[]): readonly MarketCandle[] 
     const opened = Date.parse(candle.openedAt);
     if (opened <= prior) throw new Error('Closed candles must have unique chronological open times');
     prior = opened;
-    for (const [field, value] of Object.entries({
-      open: candle.open,
-      high: candle.high,
-      low: candle.low,
-      close: candle.close,
-    })) {
+    for (const [field, value] of Object.entries({ open: candle.open, high: candle.high, low: candle.low, close: candle.close }))
       if (!Number.isFinite(value)) throw new Error(`candle.${field} must be finite`);
-    }
-    if (candle.high < Math.max(candle.open, candle.close) || candle.low > Math.min(candle.open, candle.close) || candle.high < candle.low)
-      throw new Error(`Invalid OHLC geometry for candle ${candle.id}`);
+    if (
+      candle.high < Math.max(candle.open, candle.close) ||
+      candle.low > Math.min(candle.open, candle.close) ||
+      candle.high < candle.low
+    ) throw new Error(`Invalid OHLC geometry for candle ${candle.id}`);
   }
   return Object.freeze(candles);
 }
@@ -158,6 +181,28 @@ function classifySwings(swings: MutableSwing[], tolerance: number): void {
   }
 }
 
+function freezeResult(
+  degree: StructuralDegree,
+  swings: readonly MutableSwing[],
+  legs: readonly MutableLeg[],
+  candidate: CandidateSwing | null,
+  activeDirection: StructuralDirection | null,
+): LegStructureResult {
+  return Object.freeze({
+    degree,
+    swings: Object.freeze(swings.map((swing) => Object.freeze({
+      ...swing,
+      childSwingIds: Object.freeze([...swing.childSwingIds]),
+    }))),
+    legs: Object.freeze(legs.map((leg) => Object.freeze({
+      ...leg,
+      childLegIds: Object.freeze([...leg.childLegIds]),
+    }))),
+    candidate,
+    activeDirection,
+  });
+}
+
 export function analyzeLegStructure(
   input: readonly MarketCandle[],
   config: LegStructureConfig,
@@ -171,7 +216,7 @@ export function analyzeLegStructure(
   if (!['MICRO', 'INTERIOR', 'EXTERIOR'].includes(config.degree))
     throw new Error('degree must be MICRO, INTERIOR, or EXTERIOR');
   if (candles.length < 2)
-    return Object.freeze({ degree: config.degree, swings: Object.freeze([]), legs: Object.freeze([]), candidate: null, activeDirection: null });
+    return freezeResult(config.degree, [], [], null, null);
 
   const first = candles[0]!;
   let direction: StructuralDirection | null = null;
@@ -185,19 +230,24 @@ export function analyzeLegStructure(
   const swings: MutableSwing[] = [];
   const legs: MutableLeg[] = [];
 
-  const seedBullish = (candle: MarketCandle) => {
-    direction = 'BULLISH';
-    extremeClose = candle.close;
-    extremeCloseAt = candle.openedAt;
-    extremeWick = Math.max(first.high, candle.high);
-    extremeWickAt = first.high >= candle.high ? first.openedAt : candle.openedAt;
-  };
-  const seedBearish = (candle: MarketCandle) => {
-    direction = 'BEARISH';
-    extremeClose = candle.close;
-    extremeCloseAt = candle.openedAt;
-    extremeWick = Math.min(first.low, candle.low);
-    extremeWickAt = first.low <= candle.low ? first.openedAt : candle.openedAt;
+  const seedDirection = (throughIndex: number, nextDirection: StructuralDirection) => {
+    const seed = candles.slice(0, throughIndex + 1);
+    direction = nextDirection;
+    if (nextDirection === 'BULLISH') {
+      const closeCandle = seed.reduce((best, candle) => candle.close > best.close ? candle : best);
+      const wickCandle = seed.reduce((best, candle) => candle.high > best.high ? candle : best);
+      extremeClose = closeCandle.close;
+      extremeCloseAt = closeCandle.openedAt;
+      extremeWick = wickCandle.high;
+      extremeWickAt = wickCandle.openedAt;
+    } else {
+      const closeCandle = seed.reduce((best, candle) => candle.close < best.close ? candle : best);
+      const wickCandle = seed.reduce((best, candle) => candle.low < best.low ? candle : best);
+      extremeClose = closeCandle.close;
+      extremeCloseAt = closeCandle.openedAt;
+      extremeWick = wickCandle.low;
+      extremeWickAt = wickCandle.openedAt;
+    }
   };
 
   const confirm = (candle: MarketCandle, kind: SwingKind) => {
@@ -205,7 +255,7 @@ export function analyzeLegStructure(
     const id = swingId(config, kind, pivotAt);
     const legDirection: StructuralDirection = kind === 'HIGH' ? 'BULLISH' : 'BEARISH';
     const leg = legId(config, legDirection, legStartAt, pivotAt);
-    const swing: MutableSwing = {
+    swings.push({
       id,
       degree: config.degree,
       kind,
@@ -220,8 +270,7 @@ export function analyzeLegStructure(
       parentLegId: null,
       parentSwingId: null,
       childSwingIds: [],
-    };
-    swings.push(swing);
+    });
     legs.push({
       id: leg,
       degree: config.degree,
@@ -247,8 +296,8 @@ export function analyzeLegStructure(
     const candle = candles[index]!;
     if (direction === null) {
       const delta = candle.close - first.close;
-      if (delta >= reversal) seedBullish(candle);
-      else if (delta <= -reversal) seedBearish(candle);
+      if (delta >= reversal) seedDirection(index, 'BULLISH');
+      else if (delta <= -reversal) seedDirection(index, 'BEARISH');
       continue;
     }
 
@@ -290,24 +339,15 @@ export function analyzeLegStructure(
   }
 
   classifySwings(swings, equalityTolerance);
-  const candidate: CandidateSwing | null = direction === null
-    ? null
-    : Object.freeze({
-        degree: config.degree,
-        kind: direction === 'BULLISH' ? 'HIGH' : 'LOW',
-        wickExtreme: extremeWick,
-        closeExtreme: extremeClose,
-        pivotAt: extremeWickAt,
-        structuralCloseAt: extremeCloseAt,
-      });
-
-  return Object.freeze({
+  const candidate: CandidateSwing | null = direction === null ? null : Object.freeze({
     degree: config.degree,
-    swings: Object.freeze(swings.map((swing) => Object.freeze({ ...swing, childSwingIds: Object.freeze([...swing.childSwingIds]) }))),
-    legs: Object.freeze(legs.map((leg) => Object.freeze({ ...leg, childLegIds: Object.freeze([...leg.childLegIds]) }))),
-    candidate,
-    activeDirection: direction,
+    kind: direction === 'BULLISH' ? 'HIGH' : 'LOW',
+    wickExtreme: extremeWick,
+    closeExtreme: extremeClose,
+    pivotAt: extremeWickAt,
+    structuralCloseAt: extremeCloseAt,
   });
+  return freezeResult(config.degree, swings, legs, candidate, direction);
 }
 
 function containsTime(leg: StructureLeg, timestamp: string): boolean {
@@ -319,34 +359,69 @@ function parentForLeg(child: StructureLeg, parents: readonly StructureLeg[]): St
   const midpoint = (Date.parse(child.startedAt) + Date.parse(child.endedAt)) / 2;
   return parents
     .filter((parent) => midpoint >= Date.parse(parent.startedAt) && midpoint <= Date.parse(parent.endedAt))
-    .sort((left, right) => (Date.parse(left.endedAt) - Date.parse(left.startedAt)) - (Date.parse(right.endedAt) - Date.parse(right.startedAt)))[0] ?? null;
+    .sort((left, right) =>
+      (Date.parse(left.endedAt) - Date.parse(left.startedAt)) -
+      (Date.parse(right.endedAt) - Date.parse(right.startedAt)),
+    )[0] ?? null;
 }
 
-function enrichChild(
+function linkHierarchy(
   childInput: LegStructureResult,
   parentInput: LegStructureResult,
-): LegStructureResult {
-  const parentLegChildren = new Map<string, string[]>();
-  const parentSwingChildren = new Map<string, string[]>();
-  const childLegs = childInput.legs.map((leg) => {
+): readonly [LegStructureResult, LegStructureResult] {
+  const legChildren = new Map<string, string[]>();
+  const swingChildren = new Map<string, string[]>();
+  const childLegs: MutableLeg[] = childInput.legs.map((leg) => {
     const parent = parentForLeg(leg, parentInput.legs);
-    if (parent) parentLegChildren.set(parent.id, [...(parentLegChildren.get(parent.id) ?? []), leg.id]);
-    return { ...leg, parentLegId: parent?.id ?? null };
+    if (parent) legChildren.set(parent.id, [...(legChildren.get(parent.id) ?? []), leg.id]);
+    return { ...leg, parentLegId: parent?.id ?? null, childLegIds: [...leg.childLegIds] };
   });
-  const childSwings = childInput.swings.map((swing) => {
+  const childSwings: MutableSwing[] = childInput.swings.map((swing) => {
     const parentLeg = parentInput.legs.find((leg) => containsTime(leg, swing.pivotAt)) ?? null;
-    const parentSwing = parentInput.swings.find((candidate) => candidate.kind === swing.kind && candidate.pivotAt === swing.pivotAt) ?? null;
-    if (parentSwing) parentSwingChildren.set(parentSwing.id, [...(parentSwingChildren.get(parentSwing.id) ?? []), swing.id]);
-    return { ...swing, parentLegId: parentLeg?.id ?? null, parentSwingId: parentSwing?.id ?? null };
+    const parentSwing = parentInput.swings.find((candidate) =>
+      candidate.kind === swing.kind && candidate.pivotAt === swing.pivotAt,
+    ) ?? null;
+    if (parentSwing)
+      swingChildren.set(parentSwing.id, [...(swingChildren.get(parentSwing.id) ?? []), swing.id]);
+    return {
+      ...swing,
+      parentLegId: parentLeg?.id ?? null,
+      parentSwingId: parentSwing?.id ?? null,
+      childSwingIds: [...swing.childSwingIds],
+    };
   });
-  const parentLegs = parentInput.legs.map((leg) => ({ ...leg, childLegIds: Object.freeze(parentLegChildren.get(leg.id) ?? []) }));
-  const parentSwings = parentInput.swings.map((swing) => ({ ...swing, childSwingIds: Object.freeze(parentSwingChildren.get(swing.id) ?? []) }));
-  Object.assign(parentInput, { legs: Object.freeze(parentLegs), swings: Object.freeze(parentSwings) });
-  return Object.freeze({
-    ...childInput,
-    legs: Object.freeze(childLegs.map((leg) => Object.freeze({ ...leg, childLegIds: Object.freeze([...leg.childLegIds]) }))),
-    swings: Object.freeze(childSwings.map((swing) => Object.freeze({ ...swing, childSwingIds: Object.freeze([...swing.childSwingIds]) }))),
-  });
+  const parentLegs: MutableLeg[] = parentInput.legs.map((leg) => ({
+    ...leg,
+    childLegIds: [...new Set([...leg.childLegIds, ...(legChildren.get(leg.id) ?? [])])],
+  }));
+  const parentSwings: MutableSwing[] = parentInput.swings.map((swing) => ({
+    ...swing,
+    childSwingIds: [...new Set([...swing.childSwingIds, ...(swingChildren.get(swing.id) ?? [])])],
+  }));
+  return Object.freeze([
+    freezeResult(childInput.degree, childSwings, childLegs, childInput.candidate, childInput.activeDirection),
+    freezeResult(parentInput.degree, parentSwings, parentLegs, parentInput.candidate, parentInput.activeDirection),
+  ]);
+}
+
+function degreeConfig(
+  input: Readonly<{
+    instrumentId: string;
+    timeframe: string;
+    pipSize: number;
+    equalityTolerancePips?: number;
+  }>,
+  degree: StructuralDegree,
+  reversalPips: number,
+): LegStructureConfig {
+  return {
+    instrumentId: input.instrumentId,
+    timeframe: input.timeframe,
+    degree,
+    pipSize: input.pipSize,
+    reversalPips,
+    ...(input.equalityTolerancePips === undefined ? {} : { equalityTolerancePips: input.equalityTolerancePips }),
+  };
 }
 
 export function analyzeNestedLegStructure(
@@ -365,33 +440,12 @@ export function analyzeNestedLegStructure(
   if (!(microThreshold < interiorThreshold && interiorThreshold < exteriorThreshold))
     throw new Error('Nested reversal thresholds must satisfy MICRO < INTERIOR < EXTERIOR');
 
-  let exterior = analyzeLegStructure(candles, {
-    instrumentId: input.instrumentId,
-    timeframe: input.timeframe,
-    degree: 'EXTERIOR',
-    pipSize: input.pipSize,
-    reversalPips: exteriorThreshold,
-    equalityTolerancePips: input.equalityTolerancePips,
-  });
-  let interior = analyzeLegStructure(candles, {
-    instrumentId: input.instrumentId,
-    timeframe: input.timeframe,
-    degree: 'INTERIOR',
-    pipSize: input.pipSize,
-    reversalPips: interiorThreshold,
-    equalityTolerancePips: input.equalityTolerancePips,
-  });
-  let micro = analyzeLegStructure(candles, {
-    instrumentId: input.instrumentId,
-    timeframe: input.timeframe,
-    degree: 'MICRO',
-    pipSize: input.pipSize,
-    reversalPips: microThreshold,
-    equalityTolerancePips: input.equalityTolerancePips,
-  });
+  let exterior = analyzeLegStructure(candles, degreeConfig(input, 'EXTERIOR', exteriorThreshold));
+  let interior = analyzeLegStructure(candles, degreeConfig(input, 'INTERIOR', interiorThreshold));
+  let micro = analyzeLegStructure(candles, degreeConfig(input, 'MICRO', microThreshold));
 
-  interior = enrichChild(interior, exterior);
-  micro = enrichChild(micro, interior);
+  [interior, exterior] = linkHierarchy(interior, exterior);
+  [micro, interior] = linkHierarchy(micro, interior);
 
   return Object.freeze({ MICRO: micro, INTERIOR: interior, EXTERIOR: exterior });
 }
