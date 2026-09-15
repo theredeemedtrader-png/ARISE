@@ -30,6 +30,10 @@ import { BUILD_COMMIT, BUILD_DATE } from './build-metadata.js';
 import { PackagedMt5Agent } from './mt5-agent-manager.js';
 import { createProductLogger, type ProductLogger } from './product-logger.js';
 import {
+  StructureSyncCoordinator,
+  structureSyncConfigurationFromEnvironment,
+} from './structure-sync.js';
+import {
   adoptLegacyDatabase,
   backupDatabase,
   ensureProductDirectories,
@@ -39,6 +43,7 @@ import {
 let connection: ReturnType<typeof openDatabase> | null = null;
 let mt5Client: Mt5ReadOnlyClient | null = null;
 let packagedAgent: PackagedMt5Agent | null = null;
+let structureSync: StructureSyncCoordinator | null = null;
 
 const defaultUserDataDirectory = app.getPath('userData');
 const productPaths = resolveProductPaths({
@@ -88,6 +93,7 @@ app.whenReady().then(async () => {
   logger.info('database-ready', `schema=${databaseSchemaVersion}`);
   const instrumentRepository = new InstrumentRepository(connection.db);
   const timeframeRepository = new TimeframeRepository(connection.db);
+  const marketObjectRepository = new MarketObjectRepository(connection.db);
   const evidenceRepository = new EvidenceRepository(connection.db);
   const evidenceCapture = new EvidenceCaptureCoordinator(evidenceRepository, new EvidenceAssetStore(productPaths.evidence));
   const mt5Repository = new Mt5Repository(connection.sqlite);
@@ -105,12 +111,20 @@ app.whenReady().then(async () => {
   const protectionGateway=new ProtectionGateway(connection.sqlite,mt5Repository,protectionRepository,mt5Client);
   evidenceCapture.enqueue(evidenceRepository.list().filter((aggregate) => aggregate.snapshots.length === 0).map((aggregate) => aggregate.plan));
   ensureChartCatalog(instrumentRepository, timeframeRepository);
+  structureSync = new StructureSyncCoordinator(
+    mt5Repository,
+    instrumentRepository,
+    timeframeRepository,
+    marketObjectRepository,
+    structureSyncConfigurationFromEnvironment(),
+    (event, detail) => logger.info(event, detail),
+  );
 
   registerIpcHandlers({
     ideaRepository: new IdeaRepository(connection.db),
     instrumentRepository,
     timeframeRepository,
-    marketObjectRepository: new MarketObjectRepository(connection.db),
+    marketObjectRepository,
     planningRepository: new PlanningRepository(connection.db),
     documentRepository: new DocumentRepository(connection.db),
     reviewRepository: new ReviewRepository(connection.db),
@@ -141,6 +155,7 @@ app.whenReady().then(async () => {
     packagedAgent.start();
   }
   mt5Client.start();
+  structureSync.start();
 
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) await createWindow();
@@ -159,6 +174,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  structureSync?.stop();
   packagedAgent?.stop();
   mt5Client?.stop();
   connection?.sqlite.close();

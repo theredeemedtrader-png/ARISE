@@ -24,6 +24,8 @@ export interface PythonMt5DemoConnectorOptions {
   readonly ledgerPath: string;
   readonly symbolMappings: readonly RealMt5SymbolMapping[];
   readonly timeframes?: readonly string[];
+  readonly historyBars?: number | undefined;
+  readonly historyBarsByTimeframe?: Readonly<Record<string, number>> | undefined;
   readonly magic?: number;
   readonly timeoutMs?: number;
   readonly now?: () => number;
@@ -50,6 +52,29 @@ type AgentPayload = ReturnType<typeof mt5AgentPayloadSchema.parse>;
 const bridgePath = process.env.ARISE_MT5_BRIDGE_PATH?.trim() || fileURLToPath(
   new URL('../python/mt5_bridge.py', import.meta.url),
 );
+const marketDataBridgePath = process.env.ARISE_MT5_MARKET_DATA_BRIDGE_PATH?.trim() || fileURLToPath(
+  new URL('../python/mt5_market_data_bridge.py', import.meta.url),
+);
+const DEFAULT_MARKET_DATA_TIMEFRAMES = Object.freeze([
+  'M1',
+  'M5',
+  'M15',
+  'H1',
+  'H4',
+  'D1',
+  'W1',
+] as const);
+const DEFAULT_HISTORY_BARS_BY_TIMEFRAME = Object.freeze({
+  M1: 5_000,
+  M5: 5_000,
+  M15: 4_000,
+  H1: 3_000,
+  H4: 2_000,
+  D1: 1_500,
+  W1: 520,
+} as const);
+const LIVE_TAIL_BARS = 3;
+const DEEP_HISTORY_REFRESH_EVERY = 300;
 
 function rejectedExecution(
   command: Mt5ExecutionCommand,
@@ -91,6 +116,7 @@ function rejectedManagement(
 export class PythonMt5DemoConnector implements BrokerMutationConnector {
   private lastSnapshot: Mt5Snapshot | null = null;
   private lastTerminalMetadata: RealMt5Probe['terminalMetadata'] | null = null;
+  private snapshotRequestCount = 0;
   private readonly quoteObservations = new Map<
     string,
     Readonly<{ sequence: number; receivedAt: string }>
@@ -122,6 +148,7 @@ export class PythonMt5DemoConnector implements BrokerMutationConnector {
       this.lastSnapshot = snapshot;
       return snapshot;
     } catch (error) {
+      this.snapshotRequestCount = 0;
       const snapshot = mt5SnapshotSchema.parse({
         snapshotId: randomUUID(),
         complete: false,
@@ -193,10 +220,6 @@ export class PythonMt5DemoConnector implements BrokerMutationConnector {
   }
 
   hasApplied(idempotencyKey: string): boolean {
-    // The Agent may receive a durable retry carrying the prior session identity
-    // after restart. Only identities already present in the Python ledger may
-    // bypass that stale-session check; the connector and Python demo/account,
-    // quote, fingerprint, and broker-reconciliation guards still run.
     try {
       const ledger = JSON.parse(
         readFileSync(this.options.ledgerPath, 'utf8'),
@@ -231,8 +254,6 @@ export class PythonMt5DemoConnector implements BrokerMutationConnector {
         disconnectAfter: null,
       };
     } catch {
-      // A bridge failure after send has an unknown broker outcome. Emitting no
-      // result preserves the frozen Desktop timeout/reconciliation path.
       return { payloads: Object.freeze([]), disconnectAfter: null };
     }
   }
@@ -317,6 +338,19 @@ export class PythonMt5DemoConnector implements BrokerMutationConnector {
     return Object.freeze(raw.map((payload) => mt5AgentPayloadSchema.parse(payload)));
   }
 
+  private deepHistoryBars(): Readonly<Record<string, number>> {
+    if (this.options.historyBarsByTimeframe)
+      return this.options.historyBarsByTimeframe;
+    if (this.options.historyBars !== undefined)
+      return Object.fromEntries(
+        (this.options.timeframes ?? DEFAULT_MARKET_DATA_TIMEFRAMES).map((timeframe) => [
+          timeframe,
+          this.options.historyBars!,
+        ]),
+      );
+    return DEFAULT_HISTORY_BARS_BY_TIMEFRAME;
+  }
+
   private invoke(
     operation: 'snapshot' | 'execute' | 'manage',
     command?: Mt5ExecutionCommand | Mt5ManagementCommand,
@@ -325,12 +359,18 @@ export class PythonMt5DemoConnector implements BrokerMutationConnector {
     readonly payloads?: unknown;
     readonly terminalMetadata?: unknown;
   } {
+    const snapshotIndex = operation === 'snapshot' ? this.snapshotRequestCount++ : -1;
+    const deepHistory = operation === 'snapshot' && (
+      snapshotIndex < 2 || snapshotIndex % DEEP_HISTORY_REFRESH_EVERY === 0
+    );
     const request = Object.freeze({
       operation,
       terminalPath: this.options.terminalPath,
       ledgerPath: this.options.ledgerPath,
       symbolMappings: this.options.symbolMappings,
-      timeframes: this.options.timeframes ?? ['M1', 'M5'],
+      timeframes: this.options.timeframes ?? DEFAULT_MARKET_DATA_TIMEFRAMES,
+      historyBars: deepHistory ? undefined : LIVE_TAIL_BARS,
+      historyBarsByTimeframe: deepHistory ? this.deepHistoryBars() : undefined,
       magic: this.options.magic ?? 260912,
       ...(command ? { command } : {}),
     });
@@ -342,13 +382,13 @@ export class PythonMt5DemoConnector implements BrokerMutationConnector {
       };
     const result = spawnSync(
       this.options.pythonExecutable,
-      [bridgePath],
+      [operation === 'snapshot' ? marketDataBridgePath : bridgePath],
       {
         input: JSON.stringify(request),
         encoding: 'utf8',
         windowsHide: true,
         timeout: this.options.timeoutMs ?? 30_000,
-        maxBuffer: 8 * 1024 * 1024,
+        maxBuffer: 32 * 1024 * 1024,
       },
     );
     if (result.error) throw result.error;
@@ -375,6 +415,8 @@ export function pythonMt5OptionsFromEnvironment(): PythonMt5DemoConnectorOptions
   if (!rawMappings)
     throw new Error('ARISE_MT5_SYMBOLS_JSON is required for explicit real-terminal mappings');
   const mappings = JSON.parse(rawMappings) as RealMt5SymbolMapping[];
+  const rawHistoryMap = process.env.ARISE_MT5_HISTORY_BARS_JSON?.trim();
+  const legacyHistoryBars = process.env.ARISE_MT5_HISTORY_BARS?.trim();
   return {
     pythonExecutable: process.env.ARISE_MT5_PYTHON ?? 'python',
     terminalPath: process.env.ARISE_MT5_TERMINAL_PATH ?? '',
@@ -386,10 +428,14 @@ export function pythonMt5OptionsFromEnvironment(): PythonMt5DemoConnectorOptions
         'mt5-agent-ledger.json',
       ),
     symbolMappings: mappings,
-    timeframes: (process.env.ARISE_MT5_TIMEFRAMES ?? 'M1,M5')
+    timeframes: (process.env.ARISE_MT5_TIMEFRAMES ?? DEFAULT_MARKET_DATA_TIMEFRAMES.join(','))
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean),
+    historyBarsByTimeframe: rawHistoryMap
+      ? JSON.parse(rawHistoryMap) as Record<string, number>
+      : undefined,
+    historyBars: legacyHistoryBars ? Number(legacyHistoryBars) : undefined,
     magic: Number(process.env.ARISE_MT5_MAGIC ?? 260912),
   };
 }

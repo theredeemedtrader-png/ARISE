@@ -6,6 +6,7 @@ export * from './canonical-idea-repository';
 export * from './colony-repository';
 export * from './target-repository';
 export * from './market-object-repository';
+export * from './structure-market-object-repository';
 export * from './timeframe-projection-repository';
 export * from './participation-repository';
 export * from './schema';

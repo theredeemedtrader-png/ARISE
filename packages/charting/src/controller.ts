@@ -1,9 +1,11 @@
 import {
   CandlestickSeries,
   ColorType,
+  TickMarkType,
   createChart,
   type CandlestickData,
   type ISeriesApi,
+  type Logical,
   type MouseEventParams,
   type Time,
   type UTCTimestamp,
@@ -21,6 +23,49 @@ export interface ChartClick {
 function numericTime(value: Time | null | undefined): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   return null;
+}
+
+function timeAsDate(value: Time): Date | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return new Date(value * 1000);
+  if (typeof value === 'object' && value !== null && 'year' in value && 'month' in value && 'day' in value) {
+    return new Date(Number(value.year), Number(value.month) - 1, Number(value.day));
+  }
+  return null;
+}
+
+function localTimeFormatter(value: Time): string {
+  const date = timeAsDate(value);
+  if (!date) return '';
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
+function localTickFormatter(value: Time, mark: TickMarkType, locale: string): string | null {
+  const date = timeAsDate(value);
+  if (!date) return null;
+  if (mark === TickMarkType.Year)
+    return new Intl.DateTimeFormat(locale, { year: 'numeric' }).format(date);
+  if (mark === TickMarkType.Month)
+    return new Intl.DateTimeFormat(locale, { month: 'short' }).format(date);
+  if (mark === TickMarkType.DayOfMonth)
+    return new Intl.DateTimeFormat(locale, { day: '2-digit' }).format(date);
+  if (mark === TickMarkType.TimeWithSeconds)
+    return new Intl.DateTimeFormat(locale, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(date);
+  return new Intl.DateTimeFormat(locale, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
 }
 
 function asCandlestick(candle: AriseCandle): CandlestickData<UTCTimestamp> {
@@ -44,7 +89,7 @@ export class AriseChartController {
     if (!this.clickHandler || !param.point) return;
     const eventTime = numericTime(param.time);
     const coordinateTime = numericTime(this.chart.timeScale().coordinateToTime(param.point.x));
-    const time = eventTime ?? coordinateTime;
+    const time = eventTime ?? coordinateTime ?? this.timeFromCoordinate(param.point.x);
     const price = this.series.coordinateToPrice(param.point.y);
     if (time === null || price === null || !Number.isFinite(price)) return;
     const candle = this.candles.find((entry) => entry.time === time) ?? null;
@@ -72,6 +117,9 @@ export class AriseChartController {
     return {
       autoSize: false,
       attributionLogo: true,
+      localization: {
+        timeFormatter: localTimeFormatter,
+      },
       layout: {
         background: { type: ColorType.Solid, color: dark ? '#09121d' : '#f7f9fc' },
         textColor: dark ? '#7890a8' : '#536579',
@@ -94,12 +142,44 @@ export class AriseChartController {
         borderColor: dark ? '#203247' : '#d7e0ea',
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 8,
+        rightOffset: 18,
         barSpacing: 7,
+        tickMarkFormatter: localTickFormatter,
       },
       handleScroll: true,
       handleScale: true,
     };
+  }
+
+  private intervalSeconds(): number {
+    if (this.candles.length < 2) return 60;
+    const samples: number[] = [];
+    for (let index = Math.max(1, this.candles.length - 8); index < this.candles.length; index += 1) {
+      const delta = this.candles[index]!.time - this.candles[index - 1]!.time;
+      if (Number.isFinite(delta) && delta > 0) samples.push(delta);
+    }
+    if (!samples.length) return 60;
+    samples.sort((left, right) => left - right);
+    return samples[Math.floor(samples.length / 2)]!;
+  }
+
+  private logicalForTime(time: number): number | null {
+    if (!this.candles.length || !Number.isFinite(time)) return null;
+    const lastIndex = this.candles.length - 1;
+    const last = this.candles[lastIndex]!;
+    return lastIndex + (time - last.time) / this.intervalSeconds();
+  }
+
+  private timeFromLogical(logical: number): number | null {
+    if (!this.candles.length || !Number.isFinite(logical)) return null;
+    const lastIndex = this.candles.length - 1;
+    const last = this.candles[lastIndex]!;
+    return Math.round(last.time + (logical - lastIndex) * this.intervalSeconds());
+  }
+
+  private timeFromCoordinate(x: number): number | null {
+    const logical = this.chart.timeScale().coordinateToLogical(x);
+    return logical === null ? null : this.timeFromLogical(logical);
   }
 
   setTheme(theme: ChartTheme): void {
@@ -124,7 +204,12 @@ export class AriseChartController {
   }
 
   timeToX(time: number): number | null {
-    return this.chart.timeScale().timeToCoordinate(time as UTCTimestamp);
+    const direct = this.chart.timeScale().timeToCoordinate(time as UTCTimestamp);
+    if (direct !== null) return direct;
+    const logical = this.logicalForTime(time);
+    return logical === null
+      ? null
+      : this.chart.timeScale().logicalToCoordinate(logical as Logical);
   }
 
   width(): number {
@@ -139,7 +224,8 @@ export class AriseChartController {
     const rect = this.container.getBoundingClientRect();
     const x = clientX - rect.left;
     const y = clientY - rect.top;
-    const time = numericTime(this.chart.timeScale().coordinateToTime(x));
+    const directTime = numericTime(this.chart.timeScale().coordinateToTime(x));
+    const time = directTime ?? this.timeFromCoordinate(x);
     const price = this.series.coordinateToPrice(y);
     return time !== null && price !== null && Number.isFinite(price)
       ? Object.freeze({ time, price })
