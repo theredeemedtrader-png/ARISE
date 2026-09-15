@@ -16,4 +16,5 @@ export * from './market-object-values';
 export * from './market-object';
 export * from './market-object-relation';
 export * from './market-object-reference';
+export * from './market-object-foundation';
 export * from './timeframe-projection';
