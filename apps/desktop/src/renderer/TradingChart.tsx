@@ -176,6 +176,10 @@ function shiftGeometry(geometry: DrawingGeometry, priceDelta: number): DrawingGe
   return translateGeometry(geometry, 0, priceDelta);
 }
 
+function isAutomatedStructure(drawing: ChartDrawing): boolean {
+  return drawing.semanticType === 'STRUCTURE_LEG' || drawing.semanticType === 'STRUCTURE_SWING';
+}
+
 function geometryForTool(tool: Exclude<DrawingTool, 'SELECT'>, start: ChartPoint, end: ChartPoint, semanticType: string): DrawingGeometry {
   if (tool === 'POINT') return { kind: 'POINT', point: end };
   if (tool === 'TEXT') return { kind: 'TEXT', point: end, text: semanticType.replaceAll('_', ' ') };
@@ -217,6 +221,8 @@ function DrawingShape({ drawing, controller, selected, draft = false, onEditStar
   };
   const className = `market-shape market-shape-${drawing.role.toLowerCase()} ${selected ? 'selected' : ''} ${draft ? 'draft' : ''}`;
   const geometry = drawing.geometry;
+  const editable = !isAutomatedStructure(drawing);
+  const showHandles = selected && !draft && editable;
   const begin = (handle: EditHandle) => (event: ReactPointerEvent<SVGElement>) => {
     if (draft) return;
     onEditStart(handle, event);
@@ -227,7 +233,7 @@ function DrawingShape({ drawing, controller, selected, draft = false, onEditStar
     const center = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     return <g>
       <rect className={className} x={Math.min(a.x,b.x)} y={Math.min(a.y,b.y)} width={Math.abs(b.x-a.x)} height={Math.abs(b.y-a.y)} rx="3" onPointerDown={begin('BODY')}/>
-      {selected && !draft ? <>
+      {showHandles ? <>
         <DrawingNode x={a.x} y={a.y} handle="START" onEditStart={onEditStart}/>
         <DrawingNode x={b.x} y={b.y} handle="END" onEditStart={onEditStart}/>
         <DrawingNode x={center.x} y={center.y} handle="BODY" onEditStart={onEditStart}/>
@@ -245,9 +251,9 @@ function DrawingShape({ drawing, controller, selected, draft = false, onEditStar
     const endY = geometry.kind === 'RAY' ? a.y + (b.y - a.y) * rayScale : b.y;
     const center = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     return <g>
-      {!draft ? <line x1={a.x} y1={a.y} x2={endX} y2={endY} stroke="transparent" strokeWidth={14} pointerEvents="stroke" style={{ cursor: 'move' }} onPointerDown={begin('BODY')}/> : null}
+      {!draft ? <line x1={a.x} y1={a.y} x2={endX} y2={endY} stroke="transparent" strokeWidth={14} pointerEvents="stroke" style={{ cursor: editable ? 'move' : 'pointer' }} onPointerDown={begin('BODY')}/> : null}
       <line className={className} x1={a.x} y1={a.y} x2={endX} y2={endY} onPointerDown={begin('BODY')}/>
-      {selected && !draft ? <>
+      {showHandles ? <>
         <DrawingNode x={a.x} y={a.y} handle="START" onEditStart={onEditStart}/>
         <DrawingNode x={b.x} y={b.y} handle="END" onEditStart={onEditStart}/>
         <DrawingNode x={center.x} y={center.y} handle="BODY" onEditStart={onEditStart}/>
@@ -259,7 +265,7 @@ function DrawingShape({ drawing, controller, selected, draft = false, onEditStar
     if (!valuePoint) return null;
     return <g>
       <text className={className} x={valuePoint.x+6} y={valuePoint.y-6} onPointerDown={begin('BODY')}>{geometry.text}</text>
-      {selected && !draft ? <DrawingNode x={valuePoint.x} y={valuePoint.y} handle="POINT" onEditStart={onEditStart}/> : null}
+      {showHandles ? <DrawingNode x={valuePoint.x} y={valuePoint.y} handle="POINT" onEditStart={onEditStart}/> : null}
     </g>;
   }
   if (geometry.kind === 'POINT' || geometry.kind === 'CANDLE_REFERENCE') {
@@ -267,7 +273,7 @@ function DrawingShape({ drawing, controller, selected, draft = false, onEditStar
     if (!valuePoint) return null;
     return <g>
       <circle className={className} cx={valuePoint.x} cy={valuePoint.y} r={selected ? 6 : 4} onPointerDown={begin('BODY')}/>
-      {selected && !draft ? <DrawingNode x={valuePoint.x} y={valuePoint.y} handle="POINT" onEditStart={onEditStart}/> : null}
+      {showHandles ? <DrawingNode x={valuePoint.x} y={valuePoint.y} handle="POINT" onEditStart={onEditStart}/> : null}
     </g>;
   }
   return null;
@@ -385,12 +391,15 @@ export function TradingChart({ symbol, theme }: Props) {
   }, []);
 
   useEffect(() => {
-    loadObjects().catch(() => setStatus('OBJECT LOAD ERROR'));
     setSelectedObjectId(null);
     setSelectedCandle(null);
     setProjectionStack([]);
     editSessionRef.current = null;
     setEditPreview(null);
+    const refresh = () => loadObjects().catch(() => setStatus('OBJECT LOAD ERROR'));
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 2_000);
+    return () => window.clearInterval(timer);
   }, [loadObjects]);
 
   useEffect(() => {
@@ -501,11 +510,12 @@ export function TradingChart({ symbol, theme }: Props) {
 
   const beginObjectEdit = (drawing: ChartDrawing, handle: EditHandle, event: ReactPointerEvent<SVGElement>) => {
     if (tool !== 'SELECT') return;
-    const point = controllerRef.current?.pointFromClient(event.clientX, event.clientY) ?? null;
-    if (!point) return;
     event.preventDefault();
     event.stopPropagation();
     setSelectedObjectId(drawing.id);
+    if (isAutomatedStructure(drawing)) return;
+    const point = controllerRef.current?.pointFromClient(event.clientX, event.clientY) ?? null;
+    if (!point) return;
     editSessionRef.current = {
       objectId: drawing.id,
       handle,
@@ -572,7 +582,7 @@ export function TradingChart({ symbol, theme }: Props) {
   };
 
   const nudgeSelected = async (direction: 1 | -1) => {
-    if (!selectedObject || !instrument) return;
+    if (!selectedObject || !instrument || isAutomatedStructure(selectedObject)) return;
     const geometry = shiftGeometry(selectedObject.geometry, instrument.pipSize * direction);
     await reviseGeometry(selectedObject.id, geometry);
   };
@@ -654,8 +664,12 @@ export function TradingChart({ symbol, theme }: Props) {
           <div><span>Meaning</span><b>{selectedObject.semanticType}</b></div>
           <div><span>Role</span><b>{selectedObject.role}</b></div>
           <div><span>Version</span><b>v{selectedObject.versionNo}</b></div>
-          <div className="object-nudge"><button onClick={()=>nudgeSelected(1)}>+1 PIP</button><button onClick={()=>nudgeSelected(-1)}>−1 PIP</button><button onClick={()=>hideObject(selectedObject.id)}>DELETE</button></div>
-          <small>Drag the drawing body or center node to reposition it. Drag endpoint nodes to reshape it. Each completed drag creates a new immutable MarketObjectVersion.</small>
+          {isAutomatedStructure(selectedObject)
+            ? <div className="object-nudge"><button onClick={()=>hideObject(selectedObject.id)}>HIDE</button></div>
+            : <div className="object-nudge"><button onClick={()=>nudgeSelected(1)}>+1 PIP</button><button onClick={()=>nudgeSelected(-1)}>−1 PIP</button><button onClick={()=>hideObject(selectedObject.id)}>DELETE</button></div>}
+          <small>{isAutomatedStructure(selectedObject)
+            ? 'Detected structure is read-only. ARISE persists confirmed detector output as immutable Market Objects; hide it locally without altering detector history.'
+            : 'Drag the drawing body or center node to reposition it. Drag endpoint nodes to reshape it. Each completed drag creates a new immutable MarketObjectVersion.'}</small>
         </section> : null}
       </> : null}
 
